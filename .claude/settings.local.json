@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ':*)",
+      "Read(//c/Users/joshu/OneDrive/Documents/Python/TEDTalkGame/**)"
+    ]
+  }
+}
