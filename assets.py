@@ -26,13 +26,14 @@ import pygame
 import constants as C
 
 # Public sprite references – None until load_all() is called
-player_img       = None   # kirby.png              scaled to (PR*2) × (PR*2)
-miles_img        = None   # miles.png              scaled to (PR*2) × (PR*2)
-door_img         = None   # door.png                scaled to DW × DH
-door_correct_img = None   # door_correct.png        scaled to DW × DH
-door_locked_img  = None   # door_locked.png         scaled to DW × DH
-bg_img           = None   # background.png          generic fallback, SW × SH
-bg_imgs: dict    = {}     # background{N}.png       level-specific, keyed by int
+player_img        = None   # kirby.png              scaled to (PR*2) × (PR*2)
+miles_img         = None   # miles.png              scaled to (PR*2) × (PR*2)
+door_img          = None   # door.png               scaled to DW × DH
+door_correct_img  = None   # door_correct.png       scaled to DW × DH
+door_locked_img   = None   # door_locked.png        scaled to DW × DH
+bg_img            = None   # background.png         generic fallback, SW × SH
+bg_imgs: dict     = {}     # background{N}.png      level-specific, keyed by int
+question_panel_img = None  # question_panel.png     right-side panel on question screen (550×650)
 
 _ASSET_DIR = os.path.join(os.path.dirname(__file__), "assets")
 
@@ -61,14 +62,16 @@ def load_all() -> None:
     Call this once after pygame.init() and display.init().
     Missing files are silently skipped; their module-level variable stays None.
     """
-    global player_img, miles_img, door_img, door_correct_img, door_locked_img, bg_img, bg_imgs
+    global player_img, miles_img, door_img, door_correct_img, door_locked_img
+    global bg_img, bg_imgs, question_panel_img
 
-    player_img       = _load("kirby.png",         (C.PR * 2, C.PR * 2))
-    miles_img        = _load("miles.png",         (C.PR * 2, C.PR * 2))
-    door_img         = _load("door.png",           (C.DW,     C.DH))
-    door_correct_img = _load("door_correct.png",   (C.DW,     C.DH))
-    door_locked_img  = _load("door_locked.png",    (C.DW,     C.DH))
-    bg_img           = _load("background.png",     (C.SW,     C.SH))
+    player_img         = _load("kirby.png",          (C.PR * 2, C.PR * 2))
+    miles_img          = _load("miles.png",          (C.PR * 2, C.PR * 2))
+    door_img           = _load("door.png",            (C.DW,     C.DH))
+    door_correct_img   = _load("door_correct.png",    (C.DW,     C.DH))
+    door_locked_img    = _load("door_locked.png",     (C.DW,     C.DH))
+    bg_img             = _load("background.png",      (C.SW,     C.SH))
+    question_panel_img = _load("question_panel.png",  (550,      C.SH))
 
     # Per-level backgrounds: background1.png … background6.png
     bg_imgs = {}
@@ -79,12 +82,13 @@ def load_all() -> None:
 
     # ── Report ────────────────────────────────────────────────────────────────
     sprites = {
-        "kirby.png":         player_img,
-        "miles.png":         miles_img,
-        "door.png":          door_img,
-        "door_correct.png":  door_correct_img,
-        "door_locked.png":   door_locked_img,
-        "background.png":    bg_img,
+        "kirby.png":            player_img,
+        "miles.png":            miles_img,
+        "door.png":             door_img,
+        "door_correct.png":     door_correct_img,
+        "door_locked.png":      door_locked_img,
+        "background.png":       bg_img,
+        "question_panel.png":   question_panel_img,
     }
     for name, img in sprites.items():
         status = "loaded" if img else "not found – procedural fallback"

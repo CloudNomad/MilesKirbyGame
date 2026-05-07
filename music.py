@@ -41,13 +41,15 @@ _index:  int       = 0      # currently loaded track index
 _muted:  bool      = False
 _volume: float     = 0.7    # 0.0 – 1.0
 
-_question_track:  str | None = None   # path to question.mp3  (None if not found)
-_cutscene_track:  str | None = None   # path to cutscene.mp3  (None if not found)
+_question_track:  str | None = None   # path to question.mp3   (None if not found)
+_cutscene_track:  str | None = None   # path to cutscene.mp3   (None if not found)
+_cutscene2_track: str | None = None   # path to cutscene2.mp3  (None if not found)
 
 _MUSIC_DIR       = os.path.join(os.path.dirname(__file__), "assets", "music")
 _SUPPORTED       = {".mp3"}
 _QUESTION_FILE   = "question.mp3"    # reserved — door question screen
 _CUTSCENE_FILE   = "cutscene.mp3"    # reserved — opening cutscene
+_CUTSCENE2_FILE  = "cutscene2.mp3"   # reserved — level 1→2 transition cutscene
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
@@ -61,7 +63,7 @@ def init() -> None:
     question.mp3 is reserved for the door-question screen and is excluded
     from the normal stage playlist.
     """
-    global _tracks, _index, _question_track, _cutscene_track
+    global _tracks, _index, _question_track, _cutscene_track, _cutscene2_track
 
     try:
         pygame.mixer.init()
@@ -81,23 +83,29 @@ def init() -> None:
     )
 
     # Separate reserved tracks from the stage playlist
-    _RESERVED = {_QUESTION_FILE, _CUTSCENE_FILE}
-    q_path = os.path.join(_MUSIC_DIR, _QUESTION_FILE)
-    c_path = os.path.join(_MUSIC_DIR, _CUTSCENE_FILE)
-    _question_track = q_path if os.path.isfile(q_path) else None
-    _cutscene_track = c_path if os.path.isfile(c_path) else None
+    _RESERVED = {_QUESTION_FILE, _CUTSCENE_FILE, _CUTSCENE2_FILE}
+    q_path  = os.path.join(_MUSIC_DIR, _QUESTION_FILE)
+    c_path  = os.path.join(_MUSIC_DIR, _CUTSCENE_FILE)
+    c2_path = os.path.join(_MUSIC_DIR, _CUTSCENE2_FILE)
+    _question_track  = q_path  if os.path.isfile(q_path)  else None
+    _cutscene_track  = c_path  if os.path.isfile(c_path)  else None
+    _cutscene2_track = c2_path if os.path.isfile(c2_path) else None
     _tracks = [t for t in all_files
                if os.path.basename(t).lower() not in _RESERVED]
     _index  = 0
 
     if _question_track:
-        print(f"[music] Question track:  {_QUESTION_FILE}")
+        print(f"[music] Question track:   {_QUESTION_FILE}")
     else:
         print(f"[music] No question track found (add assets/music/{_QUESTION_FILE} for a dedicated track)")
     if _cutscene_track:
-        print(f"[music] Cutscene track:  {_CUTSCENE_FILE}")
+        print(f"[music] Cutscene track:   {_CUTSCENE_FILE}")
     else:
         print(f"[music] No cutscene track found (add assets/music/{_CUTSCENE_FILE} for a dedicated track)")
+    if _cutscene2_track:
+        print(f"[music] Cutscene 2 track: {_CUTSCENE2_FILE}")
+    else:
+        print(f"[music] No cutscene2 track found (add assets/music/{_CUTSCENE2_FILE} for a dedicated track)")
 
     if _tracks:
         print(f"[music] Found {len(_tracks)} stage track(s):")
@@ -198,6 +206,27 @@ def play_cutscene_track() -> None:
             play(0)
     else:
         play(0)
+
+
+def play_cutscene2_track() -> None:
+    """
+    Play the dedicated level-transition track (cutscene2.mp3) on loop.
+    If the file is missing, the currently playing track continues unchanged —
+    level 2 music will start automatically when full_reset() is called after
+    the cutscene ends.
+    """
+    if _cutscene2_track:
+        try:
+            pygame.mixer.music.load(_cutscene2_track)
+            pygame.mixer.music.set_volume(0.0 if _muted else _volume)
+            pygame.mixer.music.play(-1)
+        except pygame.error as e:
+            print(f"[music] Could not play cutscene2 track: {e}")
+            pygame.mixer.music.stop()
+    else:
+        print(f"[music] cutscene2.mp3 not found — stopping music during transition"
+              f" (add assets/music/cutscene2.mp3 for a dedicated track)")
+        pygame.mixer.music.stop()
 
 
 def resume_stage(index: int = 0) -> None:

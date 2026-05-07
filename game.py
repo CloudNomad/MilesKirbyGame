@@ -22,10 +22,10 @@ Door question flow
 ──────────────────
   Player walks into an unlocked, incomplete door:
     → FADE_OUT  (alpha 0 → 255 over ~28 frames)
-    → DOOR_QUESTION  (full-screen question; music switches to next track)
+    → DOOR_QUESTION  (split-screen question; level music continues)
       • correct  → door marked completed, +100 pts, FADE_IN
       • wrong    → lives -1, flash message, stay on DOOR_QUESTION
-    → FADE_IN   (alpha 255 → 0 over ~28 frames; original music resumes)
+    → FADE_IN   (alpha 255 → 0 over ~28 frames)
     → PLAY  (or LVLDONE if all doors are completed)
 
 Level complete: all 3 (non-locked at start, now unlocked) doors answered → LVLDONE
@@ -50,11 +50,14 @@ from background import draw_bg
 from hud        import draw_hud
 from screens    import (draw_splash, draw_title, draw_title_options,
                         draw_title_credits, draw_char_select, draw_grade_select,
-                        draw_intro, draw_door_question, draw_bonus_q,
-                        draw_bonus_res, draw_lvl_done, draw_gameover, draw_gamewin)
+                        draw_intro, draw_door_question, draw_star_reveal,
+                        draw_bonus_q, draw_bonus_res, draw_lvl_done,
+                        draw_gameover, draw_gamewin)
 import save     as savegame
 import sounds   as sfx
 import cutscene
+import cutscene2
+import intro_fade
 from player     import Player
 from level      import new_level_data, random_bonus_question
 from questions  import get_door_question
@@ -71,9 +74,7 @@ def _build_level(lvl, character="kirby"):
 def main():
     display.init("Kirby x Miles: ESL Adventure", C.FPS)
     music.init()
-    music.set_volume(0.0)
-    music.play_cutscene_track()   # start immediately — fades in during cutscene
-    assets.load_all()             # loads while music is already running
+    assets.load_all()
     sfx.init()
 
     lvl            = 1
@@ -81,8 +82,8 @@ def main():
     selected_grade = 0        # set on grade-select screen; 0 = not yet chosen
     selected_char  = "kirby"  # set on char-select screen: "kirby" or "miles"
     char_sel       = 0        # 0 = Kirby, 1 = Miles (cursor on char-select screen)
-    state          = C.CUTSCENE
-    cutscene.reset()
+    state          = C.INTRO_FADE
+    intro_fade.reset()
 
     # ── Title / options menu state ─────────────────────────────────────────────
     title_sel = 0   # 0=New Game  1=Load Game  2=Options  3=Credits
@@ -104,6 +105,13 @@ def main():
     active_door      = None  # Door object being questioned
     active_q         = None  # question dict for active door
     stage_track_idx  = 0     # music track index when we last entered PLAY
+    q_start_time     = 0     # get_ticks() when DOOR_QUESTION screen first appeared
+
+    # ── Star rank tracking ────────────────────────────────────────────────────
+    level_stars        = 0   # stars earned answering doors this level
+    total_stars        = 0   # accumulated across all levels (never reset mid-run)
+    last_earned_stars  = 0   # stars from the most recent correct answer
+    correct_anim_start = 0   # get_ticks() when DOOR_CORRECT began
 
     # ── Bonus round ────────────────────────────────────────────────────────────
     bonus_q   = None
@@ -115,12 +123,21 @@ def main():
         nonlocal flash_msg, flash_timer, flash_col
         flash_msg = msg; flash_timer = dur; flash_col = col
 
+    def _calc_stars(elapsed_ms: int) -> int:
+        s = elapsed_ms / 1000.0
+        if s <=  5: return 5
+        if s <= 10: return 4
+        if s <= 15: return 3
+        if s <= 20: return 2
+        return 1
+
     def full_reset(new_lvl, new_score, new_lives, keep_grade=True):
         nonlocal lvl, score, state, player, doors, key_items
         nonlocal door_questions, doors_completed, selected_grade
         nonlocal flash_msg, flash_timer, fade_alpha
         nonlocal active_door, active_q, stage_track_idx
         nonlocal bonus_q, bonus_won, title_sel
+        nonlocal level_stars, total_stars
         lvl   = new_lvl
         score = new_score
         player, doors, key_items = _build_level(lvl, selected_char)
@@ -136,7 +153,10 @@ def main():
         stage_track_idx  = new_lvl - 1
         bonus_q          = None
         bonus_won        = None
-        title_sel = 0
+        title_sel        = 0
+        level_stars      = 0             # fresh star count for each level
+        if not keep_grade:
+            total_stars  = 0            # full game restart — wipe total
         if keep_grade and selected_grade:
             state = C.PLAY
         else:
@@ -172,6 +192,13 @@ def main():
                     music.volume_down()
 
                 # ── State-specific keys ───────────────────────────────────────
+                elif state == C.INTRO_FADE:
+                    intro_fade.advance()
+                    if intro_fade.done:
+                        music.play_cutscene_track()
+                        cutscene.reset()
+                        state = C.CUTSCENE
+
                 elif state == C.CUTSCENE:
                     cutscene.advance()
                     if cutscene.done:
@@ -290,18 +317,29 @@ def main():
                     if idx is not None and active_q is not None:
                         if idx == active_q["ans"]:
                             # ── Correct ───────────────────────────────────────
+                            earned = _calc_stars(pygame.time.get_ticks() - q_start_time)
+                            level_stars        += earned
+                            total_stars        += earned
+                            last_earned_stars   = earned
                             active_door.completed = True
                             doors_completed.add(active_door.num)
-                            score      += 100
-                            flash_msg   = ""
-                            flash_timer = 0
-                            state       = C.FADE_IN
+                            score               += 100
+                            flash_msg            = ""
+                            flash_timer          = 0
+                            correct_anim_start   = pygame.time.get_ticks()
+                            sfx.play_star_reveal()
+                            state                = C.DOOR_CORRECT
                         else:
                             # ── Wrong ─────────────────────────────────────────
                             player.lives -= 1
                             flash("Wrong!  Try again!", C.RED, 120)
                             if player.lives <= 0:
                                 state = C.GAMEOVER
+
+                elif state == C.DOOR_CORRECT:
+                    # Any key after 400 ms skips to FADE_IN
+                    if pygame.time.get_ticks() - correct_anim_start >= 400:
+                        state = C.FADE_IN
 
                 elif state == C.BONUS_Q:
                     idx = {pygame.K_1: 0, pygame.K_2: 1, pygame.K_3: 2}.get(ev.key)
@@ -316,8 +354,17 @@ def main():
                     if ev.key in (pygame.K_RETURN, pygame.K_SPACE):
                         if lvl >= C.TOTAL:
                             state = C.GAMEWIN
+                        elif lvl == 1:
+                            cutscene2.reset()
+                            music.play_cutscene2_track()
+                            state = C.TRANSIT_12
                         else:
                             full_reset(lvl + 1, score, player.lives)
+
+                elif state == C.TRANSIT_12:
+                    cutscene2.advance()
+                    if cutscene2.done:
+                        full_reset(2, score, player.lives)
 
                 elif state in (C.GAMEOVER, C.GAMEWIN):
                     if ev.key in (pygame.K_RETURN, pygame.K_r):
@@ -421,26 +468,38 @@ def main():
                     state = C.PLAY
 
                 elif state == C.DOOR_QUESTION:
-                    _bw, _bh = 420, 68
-                    _gx = (C.SW - (_bw * 2 + 16)) // 2
-                    _gy = 118 + 106 + 18
+                    # Left-half layout: half_w=548, btn_w=250, gap_x=12
+                    _half = 548
+                    _bw, _bh = 250, 60
+                    _gx = (_half - (_bw * 2 + 12)) // 2
+                    _gy = 130 + 90 + 18
                     for i in range(4):
-                        bx2 = _gx + (i % 2) * (_bw + 16)
-                        by2 = _gy + (i // 2) * (_bh + 12)
+                        bx2 = _gx + (i % 2) * (_bw + 12)
+                        by2 = _gy + (i // 2) * (_bh + 10)
                         if bx2 <= mx <= bx2 + _bw and by2 <= my <= by2 + _bh:
                             if active_q is not None:
                                 if i == active_q["ans"]:
+                                    earned = _calc_stars(pygame.time.get_ticks() - q_start_time)
+                                    level_stars        += earned
+                                    total_stars        += earned
+                                    last_earned_stars   = earned
                                     active_door.completed = True
                                     doors_completed.add(active_door.num)
-                                    score += 100
-                                    flash_msg = ""; flash_timer = 0
-                                    state = C.FADE_IN
+                                    score              += 100
+                                    flash_msg           = ""; flash_timer = 0
+                                    correct_anim_start  = pygame.time.get_ticks()
+                                    sfx.play_star_reveal()
+                                    state               = C.DOOR_CORRECT
                                 else:
                                     player.lives -= 1
                                     flash("Wrong!  Try again!", C.RED, 120)
                                     if player.lives <= 0:
                                         state = C.GAMEOVER
                             break
+
+                elif state == C.DOOR_CORRECT:
+                    if pygame.time.get_ticks() - correct_anim_start >= 400:
+                        state = C.FADE_IN
 
                 elif state == C.PLAY:
                     for d in doors:
@@ -473,6 +532,10 @@ def main():
                 elif state == C.LVLDONE:
                     if lvl >= C.TOTAL:
                         state = C.GAMEWIN
+                    elif lvl == 1:
+                        cutscene2.reset()
+                        music.play_cutscene2_track()
+                        state = C.TRANSIT_12
                     else:
                         full_reset(lvl + 1, score, player.lives)
 
@@ -482,10 +545,20 @@ def main():
                     music.play(0)
 
         # ── Update ───────────────────────────────────────────────────────────
-        if state == C.CUTSCENE:
+        if state == C.INTRO_FADE:
+            if intro_fade.update():
+                music.play_cutscene_track()
+                cutscene.reset()
+                state = C.CUTSCENE
+
+        elif state == C.CUTSCENE:
             if cutscene.update():
                 music.play(0)   # level1.mp3 is now index 0 (cutscene.mp3 excluded)
                 state = C.TITLE
+
+        elif state == C.TRANSIT_12:
+            if cutscene2.update():
+                full_reset(2, score, player.lives)
 
         elif state == C.PLAY:
             # Player movement (suppressed during push-back)
@@ -548,13 +621,18 @@ def main():
         elif state == C.FADE_OUT:
             fade_alpha = min(255, fade_alpha + C.FADE_SPEED)
             if fade_alpha >= 255:
-                music.play_question_track()
-                state = C.DOOR_QUESTION
+                q_start_time = pygame.time.get_ticks()   # start timing the answer
+                state = C.DOOR_QUESTION   # level music keeps playing
+
+        elif state == C.DOOR_CORRECT:
+            # Auto-advance to FADE_IN after 3 seconds
+            if pygame.time.get_ticks() - correct_anim_start >= 3000:
+                state = C.FADE_IN
 
         elif state == C.FADE_IN:
             fade_alpha = max(0, fade_alpha - C.FADE_SPEED)
             if fade_alpha <= 0:
-                music.resume_stage(stage_track_idx)
+                # level music was never stopped, nothing to resume
                 # Check if all doors are now completed
                 eligible = [d for d in doors if not (d.locked and d.num not in doors_completed)]
                 if all(d.completed for d in doors):
@@ -589,7 +667,7 @@ def main():
 
         # HUD only shown during active gameplay
         if state in (C.PLAY, C.FADE_OUT, C.FADE_IN, C.DOOR_QUESTION):
-            draw_hud(lvl, player.lives, score, player.keys, doors_completed)
+            draw_hud(lvl, player.lives, score, player.keys, doors_completed, total_stars)
 
         # Flash message (centred in play area, only during PLAY)
         if flash_timer > 0 and state == C.PLAY:
@@ -611,12 +689,24 @@ def main():
                 player.lives,
                 flash_msg  if flash_timer > 0 else "",
                 flash_col,
+                assets.question_panel_img,
+                elapsed_secs=(pygame.time.get_ticks() - q_start_time) / 1000.0,
             )
             if flash_timer > 0:
                 flash_timer -= 1
 
+        elif state == C.DOOR_CORRECT:
+            draw_star_reveal(last_earned_stars,
+                             pygame.time.get_ticks() - correct_anim_start)
+
+        elif state == C.INTRO_FADE:
+            intro_fade.draw()
+
         elif state == C.CUTSCENE:
             cutscene.draw()
+
+        elif state == C.TRANSIT_12:
+            cutscene2.draw()
 
         elif state == C.SPLASH:
             draw_splash()
@@ -638,7 +728,7 @@ def main():
         elif state == C.BONUS_R:
             draw_bonus_res(bonus_won)
         elif state == C.LVLDONE:
-            draw_lvl_done(lvl, score)
+            draw_lvl_done(lvl, score, level_stars, total_stars)
         elif state == C.GAMEOVER:
             draw_gameover(score)
         elif state == C.GAMEWIN:

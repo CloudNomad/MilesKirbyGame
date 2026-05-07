@@ -10,6 +10,32 @@ import assets
 from utils import txt, wrap_text
 
 
+def _star_points(cx: float, cy: float, R: float, r: float):
+    """Return 10-point polygon for a 5-pointed star centred at (cx, cy)."""
+    pts = []
+    for i in range(10):
+        angle  = math.pi / 5 * i - math.pi / 2
+        radius = R if i % 2 == 0 else r
+        pts.append((cx + radius * math.cos(angle), cy + radius * math.sin(angle)))
+    return pts
+
+
+def _draw_stars(cx: int, cy: int, filled: int, total: int = 5, size: int = 18) -> None:
+    """
+    Draw a row of *total* stars centred at (cx, cy).
+    The first *filled* are gold; the rest are dark grey.
+    """
+    gap   = size * 2 + 4
+    start = cx - (total - 1) * gap // 2
+    for i in range(total):
+        sx  = start + i * gap
+        pts = _star_points(sx, cy, size, size * 0.42)
+        col = C.GOLD if i < filled else (45, 45, 65)
+        pygame.draw.polygon(display.screen, col, pts)
+        if i < filled:
+            pygame.draw.polygon(display.screen, (255, 240, 120), pts, 1)
+
+
 def _overlay(r: int = 0, g: int = 0, b: int = 15, a: int = 200):
     """Draw a semi-transparent full-screen colour rectangle."""
     s = pygame.Surface((C.SW, C.SH), pygame.SRCALPHA)
@@ -553,17 +579,27 @@ def draw_bonus_res(won: bool):
             C.SW // 2, C.SH // 2 + 40, center=True)
 
 
-def draw_lvl_done(lvl: int, score: int):
+def draw_lvl_done(lvl: int, score: int, level_stars: int = 0, total_stars: int = 0):
     _overlay(0, 20, 0, 185)
     txt(f"Level {lvl} Complete!", display.f_title, C.GREEN,
-        C.SW // 2, 195, center=True, shadow=True)
+        C.SW // 2, 160, center=True, shadow=True)
     txt(f"Score: {score}", display.f_big, C.GOLD,
-        C.SW // 2, 275, center=True)
+        C.SW // 2, 238, center=True)
+
+    # ── Stars earned this level ───────────────────────────────────────────────
+    txt("Stars this level", display.f_sm, C.LGRAY,
+        C.SW // 2, 288, center=True)
+    _draw_stars(C.SW // 2, 322, level_stars, total=15, size=14)
+
+    # ── Running total ─────────────────────────────────────────────────────────
+    txt(f"Total stars:  {total_stars}", display.f_med, C.GOLD,
+        C.SW // 2, 358, center=True)
+
     if lvl < C.TOTAL:
         txt(f"Next: Level {lvl + 1}  –  Grade {lvl + 1} challenges!",
-            display.f_med, C.CYAN, C.SW // 2, 345, center=True)
+            display.f_med, C.CYAN, C.SW // 2, 400, center=True)
     txt("Press ENTER or SPACE to continue", display.f_sm, C.YELLOW,
-        C.SW // 2, 425, center=True)
+        C.SW // 2, 450, center=True)
 
 
 def draw_gameover(score: int):
@@ -577,9 +613,13 @@ def draw_gameover(score: int):
 
 
 def draw_door_question(q: dict, subject_name: str, subject_color: tuple,
-                       lives: int, flash_msg: str = "", flash_col=None):
+                       lives: int, flash_msg: str = "", flash_col=None,
+                       panel_img=None, elapsed_secs: float = 0.0):
     """
-    Full-screen question screen with magical floating blue circles.
+    Split-screen question layout.
+
+    Left half  (x 0–548)  – magical deep-space bg + question + answer buttons.
+    Right half (x 552–1100) – panel_img (question_panel.png) or a decorative fallback.
 
     q            – question dict {q, opts, ans, cat}  (opts has 4 entries)
     subject_name – e.g. "Grammar"
@@ -587,32 +627,48 @@ def draw_door_question(q: dict, subject_name: str, subject_color: tuple,
     lives        – remaining lives
     flash_msg    – optional wrong-answer message
     flash_col    – colour for flash_msg
+    panel_img    – pygame.Surface for the right panel (None = procedural)
+    elapsed_secs – seconds since question appeared (drives live star rating)
     """
+    # ── Compute current star rating from elapsed time ─────────────────────────
+    if elapsed_secs <=  5: current_stars = 5
+    elif elapsed_secs <= 10: current_stars = 4
+    elif elapsed_secs <= 15: current_stars = 3
+    elif elapsed_secs <= 20: current_stars = 2
+    else:                    current_stars = 1
     if flash_col is None:
         flash_col = C.RED
 
-    scr = display.screen
+    scr  = display.screen
+    HALF = 548        # left panel width
+    DIV  = 552        # x where right panel starts (4 px divider gap)
 
-    # ── Deep-space background ─────────────────────────────────────────────────
+    # Clear the entire canvas first so the game stage doesn't show through
+    scr.set_clip(None)
     scr.fill((2, 4, 20))
 
-    # ── Floating magical circles ──────────────────────────────────────────────
+    # ═══════════════════════════════════════════════════════════════════════════
+    # LEFT HALF — deep-space + circles + question
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    # Clip drawing to the left half
+    left_clip = pygame.Rect(0, 0, HALF, C.SH)
+    scr.set_clip(left_clip)
+
+    # ── Floating magical circles (x_base capped within left half) ────────────
     t = pygame.time.get_ticks() / 1000.0
 
     # (x_base, y_frac, radius, rise_speed, wobble_amp, wobble_freq, phase, (r,g,b,a))
     _CIRCLES = [
-        (80,   0.85, 48, 55, 35, 0.6,  0.0,  (20,  80, 255, 55)),
-        (200,  0.70, 30, 75, 22, 0.9,  1.3,  (60, 140, 255, 45)),
-        (360,  0.92, 62, 40, 45, 0.45, 2.5,  (10,  55, 200, 50)),
-        (500,  0.78, 36, 65, 28, 0.75, 0.9,  (80, 180, 255, 40)),
-        (640,  0.88, 54, 45, 38, 0.55, 3.2,  (30,  90, 220, 52)),
-        (780,  0.75, 40, 60, 32, 0.80, 1.7,  (90, 200, 255, 42)),
-        (920,  0.90, 58, 35, 50, 0.40, 2.1,  (15,  60, 190, 48)),
-        (150,  0.50, 26, 80, 18, 1.10, 4.0,  (50, 120, 240, 38)),
-        (1000, 0.60, 44, 50, 30, 0.65, 0.4,  (25,  85, 215, 46)),
-        (450,  0.40, 33, 70, 24, 0.95, 3.8,  (70, 160, 255, 40)),
-        (700,  0.55, 20, 90, 15, 1.20, 1.0,  (100,210, 255, 35)),
-        (300,  0.30, 50, 38, 40, 0.50, 2.9,  (10,  50, 180, 44)),
+        (60,   0.85, 40, 55, 28, 0.60, 0.0, (20,  80, 255, 55)),
+        (180,  0.70, 26, 75, 18, 0.90, 1.3, (60, 140, 255, 45)),
+        (300,  0.92, 50, 40, 36, 0.45, 2.5, (10,  55, 200, 50)),
+        (420,  0.78, 30, 65, 22, 0.75, 0.9, (80, 180, 255, 40)),
+        (100,  0.55, 46, 45, 32, 0.55, 3.2, (30,  90, 220, 52)),
+        (490,  0.40, 34, 60, 26, 0.80, 1.7, (90, 200, 255, 42)),
+        (250,  0.30, 22, 80, 16, 1.10, 4.0, (50, 120, 240, 38)),
+        (380,  0.60, 38, 50, 28, 0.65, 0.4, (25,  85, 215, 46)),
+        (140,  0.20, 28, 70, 20, 0.95, 3.8, (70, 160, 255, 40)),
     ]
 
     for (bx, bfy, r, spd, wamp, wfreq, ph, col) in _CIRCLES:
@@ -621,7 +677,6 @@ def draw_door_question(q: dict, subject_name: str, subject_color: tuple,
         cy      = int(bfy * C.SH - drift + total_h) % total_h - r * 2
         cx      = int(bx + math.sin(t * wfreq + ph) * wamp)
 
-        # Outer glow (large, very transparent)
         glow_r = r + 14
         glow   = pygame.Surface((glow_r * 2, glow_r * 2), pygame.SRCALPHA)
         glow_a = max(0, col[3] - 30)
@@ -629,46 +684,61 @@ def draw_door_question(q: dict, subject_name: str, subject_color: tuple,
                            (glow_r, glow_r), glow_r)
         scr.blit(glow, (cx - glow_r, cy - glow_r))
 
-        # Main circle
         surf = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
         pygame.draw.circle(surf, col, (r, r), r)
-        # Inner highlight
         hi_r = max(4, r // 3)
         pygame.draw.circle(surf, (200, 230, 255, min(255, col[3] + 60)),
                            (r - hi_r // 2, r - hi_r // 2), hi_r)
         scr.blit(surf, (cx - r, cy - r))
 
-    # ── Dark vignette overlay so text is readable ─────────────────────────────
-    _overlay(0, 2, 18, 170)
+    # ── Vignette ──────────────────────────────────────────────────────────────
+    vig = pygame.Surface((HALF, C.SH), pygame.SRCALPHA)
+    vig.fill((0, 2, 18, 160))
+    scr.blit(vig, (0, 0))
 
     # ── Subject title banner ──────────────────────────────────────────────────
-    bw, bh = 420, 54
-    bx, by = (C.SW - bw) // 2, 34
+    bw, bh = 360, 48
+    bx     = (HALF - bw) // 2
+    by     = 28
     pygame.draw.rect(scr, subject_color, (bx, by, bw, bh), border_radius=12)
     pygame.draw.rect(scr, C.GOLD,        (bx, by, bw, bh), border_radius=12, width=2)
     txt(subject_name.upper(), display.f_big, C.WHITE,
-        C.SW // 2, by + bh // 2 - 10, center=True, shadow=True)
+        HALF // 2, by + bh // 2 - 10, center=True, shadow=True)
 
-    txt(f"Lives: {lives}", display.f_xs, C.YELLOW,
-        C.SW // 2, by + bh + 10, center=True)
+    # Lives on the left, live star rating on the right (within left half)
+    txt(f"Lives: {lives}", display.f_xs, C.YELLOW, 60, by + bh + 8)
+    # Stars shrink in real time as seconds tick past each threshold
+    _draw_stars(HALF // 2 + 60, by + bh + 14, current_stars, total=5, size=10)
+
+    # Timer bar — fills red→yellow as time runs out (0–20 s shown, caps at 20)
+    bar_w   = HALF - 32
+    bar_h   = 5
+    bar_x   = 16
+    bar_y   = by + bh + 28
+    filled  = max(0, 1.0 - min(elapsed_secs, 20) / 20)
+    r_col   = int(255 * (1 - filled))
+    g_col   = int(220 * filled)
+    pygame.draw.rect(scr, (30, 30, 50),           (bar_x, bar_y, bar_w, bar_h), border_radius=2)
+    if filled > 0:
+        pygame.draw.rect(scr, (r_col, g_col, 20), (bar_x, bar_y, int(bar_w * filled), bar_h), border_radius=2)
 
     # ── Question panel ────────────────────────────────────────────────────────
-    pw, ph = 860, 106
-    px     = (C.SW - pw) // 2
-    py     = 118
+    pw, ph = HALF - 32, 90
+    px     = 16
+    py     = 140
 
-    pygame.draw.rect(scr, (10, 18, 58, 230), (px, py, pw, ph), border_radius=12)
-    pygame.draw.rect(scr, C.GOLD,             (px, py, pw, ph), border_radius=12, width=2)
+    pygame.draw.rect(scr, (10, 18, 58, 230), (px, py, pw, ph), border_radius=10)
+    pygame.draw.rect(scr, C.GOLD,             (px, py, pw, ph), border_radius=10, width=2)
 
-    lines = wrap_text(q["q"], display.f_med, pw - 48)
-    line_h = 30
+    lines  = wrap_text(q["q"], display.f_med, pw - 32)
+    line_h = 26
     total_txt_h = len(lines) * line_h
-    txt_y = py + (ph - total_txt_h) // 2 + 2
+    txt_y  = py + (ph - total_txt_h) // 2 + 2
     for line in lines:
-        txt(line, display.f_med, C.WHITE, C.SW // 2, txt_y, center=True)
+        txt(line, display.f_med, C.WHITE, HALF // 2, txt_y, center=True)
         txt_y += line_h
 
-    # ── 2 × 2 answer button grid ──────────────────────────────────────────────
+    # ── 2 × 2 answer button grid (fits inside left half) ─────────────────────
     BTN_COLS = [
         (160,  40,  40),   # A – deep red
         ( 40,  80, 200),   # B – blue
@@ -677,49 +747,228 @@ def draw_door_question(q: dict, subject_name: str, subject_color: tuple,
     ]
     LABELS = ["A", "B", "C", "D"]
 
-    btn_w  = 420
-    btn_h  = 68
-    gap_x  = 16
-    gap_y  = 12
+    btn_w  = 250
+    btn_h  = 60
+    gap_x  = 12
+    gap_y  = 10
     grid_w = btn_w * 2 + gap_x
-    grid_x = (C.SW - grid_w) // 2
+    grid_x = (HALF - grid_w) // 2
     grid_y = py + ph + 18
 
     for i, opt in enumerate(q["opts"]):
-        col  = i % 2          # 0 = left,  1 = right
-        row  = i // 2         # 0 = top,   1 = bottom
-        bx2  = grid_x + col * (btn_w + gap_x)
-        by2  = grid_y + row * (btn_h + gap_y)
+        col2  = i % 2
+        row2  = i // 2
+        bx2   = grid_x + col2 * (btn_w + gap_x)
+        by2   = grid_y + row2 * (btn_h + gap_y)
 
         pygame.draw.rect(scr, BTN_COLS[i], (bx2, by2, btn_w, btn_h), border_radius=10)
         pygame.draw.rect(scr, C.WHITE,     (bx2, by2, btn_w, btn_h), border_radius=10, width=2)
 
-        # Key badge on left edge
-        badge_r = 16
+        badge_r = 14
         pygame.draw.circle(scr, (255, 255, 255, 80),
-                           (bx2 + 26, by2 + btn_h // 2), badge_r)
+                           (bx2 + 22, by2 + btn_h // 2), badge_r)
         txt(LABELS[i], display.f_sm, C.WHITE,
-            bx2 + 26, by2 + btn_h // 2 - 10, center=True, shadow=True)
+            bx2 + 22, by2 + btn_h // 2 - 10, center=True, shadow=True)
 
-        # Option text (truncate long lines to fit)
-        max_opt_w = btn_w - 62
+        max_opt_w = btn_w - 50
         opt_lines = wrap_text(opt, display.f_sm, max_opt_w)
         opt_y = by2 + btn_h // 2 - (len(opt_lines) * 20) // 2
         for ol in opt_lines:
-            txt(ol, display.f_sm, C.WHITE, bx2 + 54 + max_opt_w // 2,
+            txt(ol, display.f_sm, C.WHITE, bx2 + 44 + max_opt_w // 2,
                 opt_y, center=True)
             opt_y += 20
 
-    # ── Flash message ─────────────────────────────────────────────────────────
-    flash_y = grid_y + btn_h * 2 + gap_y + 10
+    # ── Flash message + prompt ────────────────────────────────────────────────
+    flash_y = grid_y + btn_h * 2 + gap_y + 8
     if flash_msg:
-        txt(flash_msg, display.f_big, flash_col,
-            C.SW // 2, flash_y, center=True, shadow=True)
+        txt(flash_msg, display.f_med, flash_col,
+            HALF // 2, flash_y, center=True, shadow=True)
+    prompt_y = flash_y + (32 if flash_msg else 0)
+    txt("Press  A , B , C  or  D", display.f_sm, C.YELLOW,
+        HALF // 2, prompt_y + 8, center=True)
 
-    # ── Prompt ───────────────────────────────────────────────────────────────
-    prompt_y = flash_y + (40 if flash_msg else 0)
-    txt("Press  A , B , C  or  D  to answer", display.f_sm, C.YELLOW,
-        C.SW // 2, prompt_y + 12, center=True)
+    # ═══════════════════════════════════════════════════════════════════════════
+    # DIVIDER LINE
+    # ═══════════════════════════════════════════════════════════════════════════
+    scr.set_clip(None)
+    pygame.draw.line(scr, C.GOLD, (DIV - 2, 0), (DIV - 2, C.SH), 2)
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # RIGHT HALF — PNG panel
+    # ═══════════════════════════════════════════════════════════════════════════
+    right_w = C.SW - DIV   # 548 px
+
+    if panel_img is not None:
+        # Scale the image to fill the right panel, preserving aspect ratio
+        img_w, img_h = panel_img.get_size()
+        scale        = min(right_w / img_w, C.SH / img_h)
+        new_w        = int(img_w * scale)
+        new_h        = int(img_h * scale)
+        off_x        = DIV + (right_w - new_w) // 2
+        off_y        = (C.SH - new_h) // 2
+        scaled_img   = pygame.transform.smoothscale(panel_img, (new_w, new_h))
+        scr.blit(scaled_img, (off_x, off_y))
+    else:
+        # Procedural fallback: dark panel with a gentle star-field + label
+        right_surf = pygame.Surface((right_w, C.SH))
+        right_surf.fill((6, 8, 30))
+        # Small static stars
+        import random as _rnd
+        _rnd.seed(42)
+        for _ in range(120):
+            sx = _rnd.randint(0, right_w - 1)
+            sy = _rnd.randint(0, C.SH - 1)
+            br = _rnd.randint(80, 220)
+            right_surf.set_at((sx, sy), (br, br, br))
+        scr.blit(right_surf, (DIV, 0))
+        txt("Place  question_panel.png", display.f_sm, (80, 100, 160),
+            DIV + right_w // 2, C.SH // 2 - 12, center=True)
+        txt("in the  assets/  folder", display.f_sm, (80, 100, 160),
+            DIV + right_w // 2, C.SH // 2 + 12, center=True)
+
+
+def draw_star_reveal(earned: int, anim_ms: int) -> None:
+    """
+    Epic full-screen popup shown after a correct door answer.
+
+    Phases driven by anim_ms (ms since the state started):
+      0 – 280 ms  : blinding gold screen-flash
+      180 – 650 ms : "CORRECT!" scales + bounces in
+      500 – 1400 ms: stars pop in one-by-one (each 180 ms apart)
+      900 ms+      : "+100 pts" fades in
+      1100 ms+     : "+N stars" fades in
+      1800 ms+     : "Press any key…" pulses
+    """
+    scr = display.screen
+    cx, cy = C.SW // 2, C.SH // 2
+
+    # ── 1. Dark base ──────────────────────────────────────────────────────────
+    scr.fill((5, 5, 18))
+
+    # ── 2. Radial burst rays from centre ─────────────────────────────────────
+    ray_count = 24
+    ray_len   = 700
+    # Slowly rotate over time for a dynamic feel
+    ray_angle_off = anim_ms * 0.04
+    burst_surf = pygame.Surface((C.SW, C.SH), pygame.SRCALPHA)
+    for i in range(ray_count):
+        angle  = math.radians(360 / ray_count * i + ray_angle_off)
+        # Width of each ray alternates wide / narrow
+        half_w = math.radians(3.5 if i % 2 == 0 else 1.5)
+        a1, a2 = angle - half_w, angle + half_w
+        tip_x  = cx + math.cos(angle) * ray_len
+        tip_y  = cy + math.sin(angle) * ray_len
+        l1x = cx + math.cos(a1) * 40;  l1y = cy + math.sin(a1) * 40
+        l2x = cx + math.cos(a2) * 40;  l2y = cy + math.sin(a2) * 40
+        # Fade rays in during first 400 ms
+        alpha = min(55, int(55 * anim_ms / 400))
+        pygame.draw.polygon(burst_surf, (255, 215, 0, alpha),
+                            [(l1x, l1y), (tip_x, tip_y), (l2x, l2y)])
+    scr.blit(burst_surf, (0, 0))
+
+    # ── 3. Gold screen flash (0–280 ms) ──────────────────────────────────────
+    if anim_ms < 280:
+        # Spikes at ~60 ms then decays
+        peak   = 60
+        if anim_ms <= peak:
+            raw = anim_ms / peak
+        else:
+            raw = max(0.0, 1.0 - (anim_ms - peak) / (280 - peak))
+        flash_a = int(raw ** 0.5 * 210)
+        fl = pygame.Surface((C.SW, C.SH), pygame.SRCALPHA)
+        fl.fill((255, 230, 80, flash_a))
+        scr.blit(fl, (0, 0))
+
+    # ── 4. "CORRECT!" – scales + bounces in (180–650 ms) ─────────────────────
+    t_txt = anim_ms - 180
+    if t_txt >= 0:
+        if t_txt < 220:
+            scale = t_txt / 220 * 1.28       # overshoot to 128%
+        elif t_txt < 330:
+            scale = 1.28 - (t_txt - 220) / 110 * 0.28   # settle to 100%
+        else:
+            scale = 1.0
+
+        base_surf = display.f_title.render("CORRECT!", True, (255, 240, 60))
+        # Shadow layer
+        shad_surf = display.f_title.render("CORRECT!", True, (80, 50, 0))
+        bw, bh    = base_surf.get_size()
+        sw2       = int(bw * scale); sh2 = int(bh * scale)
+        if sw2 > 0 and sh2 > 0:
+            scaled_shad = pygame.transform.smoothscale(shad_surf, (sw2, sh2))
+            scaled_base = pygame.transform.smoothscale(base_surf, (sw2, sh2))
+            scr.blit(scaled_shad, (cx - sw2 // 2 + 4, cy - sh2 // 2 - 90 + 4))
+            scr.blit(scaled_base, (cx - sw2 // 2,     cy - sh2 // 2 - 90))
+
+    # ── 5. Stars pop in one-by-one (500 – 500+4*180 = 1220 ms) ───────────────
+    STAR_SIZE  = 42
+    star_gap   = STAR_SIZE * 2 + 16
+    star_total = 5
+    star_row_w = star_total * star_gap - 16
+    star_row_x = cx - star_row_w // 2 + STAR_SIZE
+
+    for i in range(star_total):
+        t_s = anim_ms - (500 + i * 180)
+        if t_s < 0:
+            # Not yet appeared — draw dim placeholder
+            pts = _star_points(star_row_x + i * star_gap, cy + 10,
+                               STAR_SIZE, STAR_SIZE * 0.42)
+            pygame.draw.polygon(scr, (35, 35, 55), pts)
+            continue
+
+        # Scale bounce
+        if t_s < 160:
+            sc = t_s / 160 * 1.35
+        elif t_s < 260:
+            sc = 1.35 - (t_s - 160) / 100 * 0.35
+        else:
+            sc = 1.0
+
+        R2 = int(STAR_SIZE * sc)
+        if R2 < 2:
+            continue
+
+        sx = star_row_x + i * star_gap
+        sy = cy + 10
+
+        # Filled or empty based on earned count
+        if i < earned:
+            # Glow ring behind filled stars
+            glow_surf = pygame.Surface((R2 * 4, R2 * 4), pygame.SRCALPHA)
+            pygame.draw.circle(glow_surf, (255, 215, 0, 50),
+                               (R2 * 2, R2 * 2), R2 * 2)
+            scr.blit(glow_surf, (sx - R2 * 2, sy - R2 * 2))
+            col_fill = C.GOLD
+            col_edge = (255, 255, 160)
+        else:
+            col_fill = (40, 40, 60)
+            col_edge = (70, 70, 90)
+
+        pts = _star_points(sx, sy, R2, R2 * 0.42)
+        pygame.draw.polygon(scr, col_fill, pts)
+        pygame.draw.polygon(scr, col_edge, pts, 2)
+
+    # ── 6. "+100 pts" (900 ms+) ───────────────────────────────────────────────
+    if anim_ms >= 900:
+        alpha = min(255, int((anim_ms - 900) / 200 * 255))
+        s = display.f_big.render("+100 pts", True, C.YELLOW)
+        s.set_alpha(alpha)
+        scr.blit(s, (cx - s.get_width() // 2, cy + 80))
+
+    # ── 7. "+N stars" (1100 ms+) ─────────────────────────────────────────────
+    if anim_ms >= 1100:
+        alpha = min(255, int((anim_ms - 1100) / 200 * 255))
+        star_str = "★" * earned
+        s = display.f_big.render(f"+{earned} {star_str}", True, C.GOLD)
+        s.set_alpha(alpha)
+        scr.blit(s, (cx - s.get_width() // 2, cy + 124))
+
+    # ── 8. "Press any key…" pulse (1800 ms+) ─────────────────────────────────
+    if anim_ms >= 1800:
+        pulse = abs(math.sin((anim_ms - 1800) * 0.004))
+        col   = (int(160 + pulse * 95), int(160 + pulse * 95), int(50 + pulse * 30))
+        txt("Press any key to continue", display.f_sm, col,
+            cx, C.SH - 52, center=True)
 
 
 def draw_gamewin(score: int):

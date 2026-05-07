@@ -24,9 +24,10 @@ _sfx_volume: float = 0.6   # 0.0 – 1.0  (persists across set_volume calls)
 _MULTIPLIERS: dict = {"select": 2.0}
 
 _FILES = {
-    "nav":    ["menu_nav.mp3",     "menu_nav.wav",     "menu_nav.ogg"],
-    "select": ["menu_select.mp3",  "menu_select.wav",  "menu_select.ogg"],
-    "grade":  ["grade_select.mp3", "grade_select.wav", "grade_select.ogg"],
+    "nav":    ["menu_nav.mp3",      "menu_nav.wav",      "menu_nav.ogg"],
+    "select": ["menu_select.mp3",   "menu_select.wav",   "menu_select.ogg"],
+    "grade":  ["grade_select.mp3",  "grade_select.wav",  "grade_select.ogg"],
+    "star":   ["star_reveal.mp3",   "star_reveal.wav",   "star_reveal.ogg"],
 }
 
 
@@ -100,5 +101,12 @@ def play_select() -> None:
 def play_grade_select() -> None:
     """Grade confirmed on the grade-select screen."""
     snd = _snd.get("grade") or _snd.get("select")
+    if snd:
+        snd.play()
+
+
+def play_star_reveal() -> None:
+    """Triumphant sting played on the star-reveal popup after a correct answer."""
+    snd = _snd.get("star") or _snd.get("select")
     if snd:
         snd.play()

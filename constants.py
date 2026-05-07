@@ -64,6 +64,9 @@ DOOR_QUESTION = 13  # full-screen per-door question screen
 FADE_IN       = 14  # fading back in after answering
 CUTSCENE      = 15  # opening cinematic (before title screen)
 CHAR_SELECT   = 16  # character selection screen
+DOOR_CORRECT  = 17  # epic star-reveal popup after a correct door answer
+TRANSIT_12    = 18  # cinematic transition between level 1 and level 2
+INTRO_FADE    = 19  # pre-opening text-fade sequence ("It was a peaceful day…")
 
 # ─── Fade speed ───────────────────────────────────────────────────────────────
 FADE_SPEED = 9      # alpha units per frame (255/9 ≈ 28 frames = ~0.5 s at 60 fps)

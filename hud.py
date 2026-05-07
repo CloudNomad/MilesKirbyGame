@@ -31,14 +31,31 @@ def _draw_volume_bar(x: int, y: int, w: int = 60, h: int = 8):
 
 
 # ── Main HUD draw ──────────────────────────────────────────────────────────────
+def _draw_star(x: int, y: int, size: int, filled: bool) -> None:
+    """Draw a single 5-pointed star centred at (x, y)."""
+    import math
+    R = size          # outer radius
+    r = size * 0.42   # inner radius
+    pts = []
+    for i in range(10):
+        angle  = math.pi / 5 * i - math.pi / 2
+        radius = R if i % 2 == 0 else r
+        pts.append((x + radius * math.cos(angle), y + radius * math.sin(angle)))
+    col = C.GOLD if filled else (50, 50, 70)
+    pygame.draw.polygon(display.screen, col, pts)
+    if filled:
+        pygame.draw.polygon(display.screen, (255, 240, 120), pts, 1)
+
+
 def draw_hud(lvl: int, lives: int, score: int,
-             keys_held: list, doors_completed: set):
+             keys_held: list, doors_completed: set, total_stars: int = 0):
     """
     lvl             – current level number
     lives           – remaining lives
     score           – current score
     keys_held       – list of door numbers for which the player holds a key
     doors_completed – set of door nums answered correctly (e.g. {1, 3})
+    total_stars     – accumulated stars earned across all answered questions
     """
     # ── Stats bar ─────────────────────────────────────────────────────────────
     bar = pygame.Surface((C.SW, C.HUD_H), pygame.SRCALPHA)
@@ -53,6 +70,11 @@ def draw_hud(lvl: int, lives: int, score: int,
     if keys_held:
         txt("Keys: " + "  ".join(f"D{k}" for k in keys_held),
             display.f_sm, C.GOLD, 450, 12)
+
+    # Stars tally
+    if total_stars > 0:
+        lbl = display.f_xs.render(f"★ {total_stars}", True, C.GOLD)
+        display.screen.blit(lbl, (C.SW // 2 - lbl.get_width() // 2, 9))
 
     # Right side: music section
     _draw_music_section()
