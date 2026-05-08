@@ -43,7 +43,7 @@ except (ImportError, OSError):
 _PHRASES = [
     "It was a lovely and peaceful day...",
     "It seemed humanity achieved world peace...",
-    "The animals played together and the flowers bloomed...",
+    "Everyone was happy and the flowers bloomed...",
     "Nature and all life living in harmony...",
     "Then the clouds became dark",
 ]

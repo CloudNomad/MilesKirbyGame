@@ -41,15 +41,21 @@ _index:  int       = 0      # currently loaded track index
 _muted:  bool      = False
 _volume: float     = 0.7    # 0.0 – 1.0
 
-_question_track:  str | None = None   # path to question.mp3   (None if not found)
-_cutscene_track:  str | None = None   # path to cutscene.mp3   (None if not found)
-_cutscene2_track: str | None = None   # path to cutscene2.mp3  (None if not found)
+_question_track:   str | None = None   # path to question.mp3    (None if not found)
+_cutscene_track:   str | None = None   # path to cutscene.mp3    (None if not found)
+_cutscene2_track:  str | None = None   # path to cutscene2.mp3   (None if not found)
+_main_menu_track:  str | None = None   # path to MainMenu.mp3    (None if not found)
+_main_menu_active: bool       = False  # True while MainMenu.mp3 is the loaded track
 
-_MUSIC_DIR       = os.path.join(os.path.dirname(__file__), "assets", "music")
-_SUPPORTED       = {".mp3"}
-_QUESTION_FILE   = "question.mp3"    # reserved — door question screen
-_CUTSCENE_FILE   = "cutscene.mp3"    # reserved — opening cutscene
-_CUTSCENE2_FILE  = "cutscene2.mp3"   # reserved — level 1→2 transition cutscene
+_MUSIC_DIR        = os.path.join(os.path.dirname(__file__), "assets", "music")
+_SUPPORTED        = {".mp3"}
+_QUESTION_FILE    = "question.mp3"    # reserved — door question screen
+_CUTSCENE_FILE    = "cutscene.mp3"    # reserved — opening cutscene
+_CUTSCENE2_FILE   = "cutscene2.mp3"   # reserved — level 1→2 transition cutscene
+_MAIN_MENU_FILE   = "MainMenu.mp3"    # reserved — title screen
+
+# MainMenu.mp3 is 75.05 s; loop 3 s early so the transition is seamless.
+_MAIN_MENU_LOOP_MS = int((75.05 - 3.0) * 1000)   # 72 050 ms
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
@@ -63,7 +69,7 @@ def init() -> None:
     question.mp3 is reserved for the door-question screen and is excluded
     from the normal stage playlist.
     """
-    global _tracks, _index, _question_track, _cutscene_track, _cutscene2_track
+    global _tracks, _index, _question_track, _cutscene_track, _cutscene2_track, _main_menu_track
 
     try:
         pygame.mixer.init()
@@ -83,15 +89,17 @@ def init() -> None:
     )
 
     # Separate reserved tracks from the stage playlist
-    _RESERVED = {_QUESTION_FILE, _CUTSCENE_FILE, _CUTSCENE2_FILE}
+    _RESERVED = {_QUESTION_FILE, _CUTSCENE_FILE, _CUTSCENE2_FILE, _MAIN_MENU_FILE}
     q_path  = os.path.join(_MUSIC_DIR, _QUESTION_FILE)
     c_path  = os.path.join(_MUSIC_DIR, _CUTSCENE_FILE)
     c2_path = os.path.join(_MUSIC_DIR, _CUTSCENE2_FILE)
+    mm_path = os.path.join(_MUSIC_DIR, _MAIN_MENU_FILE)
     _question_track  = q_path  if os.path.isfile(q_path)  else None
     _cutscene_track  = c_path  if os.path.isfile(c_path)  else None
     _cutscene2_track = c2_path if os.path.isfile(c2_path) else None
+    _main_menu_track = mm_path if os.path.isfile(mm_path) else None
     _tracks = [t for t in all_files
-               if os.path.basename(t).lower() not in _RESERVED]
+               if os.path.basename(t) not in _RESERVED]
     _index  = 0
 
     if _question_track:
@@ -106,6 +114,10 @@ def init() -> None:
         print(f"[music] Cutscene 2 track: {_CUTSCENE2_FILE}")
     else:
         print(f"[music] No cutscene2 track found (add assets/music/{_CUTSCENE2_FILE} for a dedicated track)")
+    if _main_menu_track:
+        print(f"[music] Main menu track:  {_MAIN_MENU_FILE}")
+    else:
+        print(f"[music] No main menu track found (add assets/music/{_MAIN_MENU_FILE} for a dedicated track)")
 
     if _tracks:
         print(f"[music] Found {len(_tracks)} stage track(s):")
@@ -227,6 +239,36 @@ def play_cutscene2_track() -> None:
         print(f"[music] cutscene2.mp3 not found — stopping music during transition"
               f" (add assets/music/cutscene2.mp3 for a dedicated track)")
         pygame.mixer.music.stop()
+
+
+def play_main_menu_track() -> None:
+    """
+    Play MainMenu.mp3 for the title screen.
+    Call update_main_menu() every frame while on any title state so the track
+    loops 3 seconds before its natural end (at 72.05 s of 75.05 s total).
+    """
+    global _main_menu_active
+    _main_menu_active = False
+    if _main_menu_track:
+        try:
+            pygame.mixer.music.load(_main_menu_track)
+            pygame.mixer.music.set_volume(0.0 if _muted else _volume)
+            pygame.mixer.music.play(0)   # play once; update_main_menu handles re-loop
+            _main_menu_active = True
+        except pygame.error as e:
+            print(f"[music] Could not play main menu track: {e}")
+            play(0)
+    else:
+        play(0)
+
+
+def update_main_menu() -> None:
+    """Call once per frame while in any title state. Re-loops 3 s before track end."""
+    if not _main_menu_active:
+        return
+    pos = pygame.mixer.music.get_pos()   # ms since last play(); -1 if stopped
+    if pos < 0 or pos >= _MAIN_MENU_LOOP_MS:
+        pygame.mixer.music.play(0)
 
 
 def resume_stage(index: int = 0) -> None:

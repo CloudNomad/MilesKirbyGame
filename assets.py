@@ -34,6 +34,7 @@ door_locked_img   = None   # door_locked.png        scaled to DW × DH
 bg_img            = None   # background.png         generic fallback, SW × SH
 bg_imgs: dict     = {}     # background{N}.png      level-specific, keyed by int
 question_panel_img = None  # question_panel.png     right-side panel on question screen (550×650)
+main_menu_img     = None   # MainMenu.png           full-screen title screen background
 
 _ASSET_DIR = os.path.join(os.path.dirname(__file__), "assets")
 
@@ -49,7 +50,7 @@ def _load(filename: str, size: tuple | None = None):
     try:
         img = pygame.image.load(path).convert_alpha()
         if size:
-            img = pygame.transform.scale(img, size)
+            img = pygame.transform.smoothscale(img, size)
         return img
     except pygame.error as e:
         print(f"[assets] Warning: could not load '{filename}': {e}")
@@ -63,15 +64,16 @@ def load_all() -> None:
     Missing files are silently skipped; their module-level variable stays None.
     """
     global player_img, miles_img, door_img, door_correct_img, door_locked_img
-    global bg_img, bg_imgs, question_panel_img
+    global bg_img, bg_imgs, question_panel_img, main_menu_img
 
-    player_img         = _load("kirby.png",          (C.PR * 2, C.PR * 2))
-    miles_img          = _load("miles.png",          (C.PR * 2, C.PR * 2))
+    player_img         = _load("kirby.png",          (C.PR * 3, C.PR * 3))
+    miles_img          = _load("miles.png",          (C.PR * 3, C.PR * 3))
     door_img           = _load("door.png",            (C.DW,     C.DH))
     door_correct_img   = _load("door_correct.png",    (C.DW,     C.DH))
     door_locked_img    = _load("door_locked.png",     (C.DW,     C.DH))
     bg_img             = _load("background.png",      (C.SW,     C.SH))
     question_panel_img = _load("question_panel.png",  (550,      C.SH))
+    main_menu_img      = _load("MainMenu.png",        (C.SW,     C.SH))
 
     # Per-level backgrounds: background1.png … background6.png
     bg_imgs = {}

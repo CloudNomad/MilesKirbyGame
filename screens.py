@@ -116,15 +116,23 @@ def draw_splash() -> None:
         C.SW // 2, C.SH - 26, center=True)
 
 
-def draw_title(sel: int, save_exists: bool) -> None:
+def draw_title(sel: int, save_exists: bool, enter_ms: int = 0) -> None:
     """
     Main title / menu screen.
 
     sel         – currently highlighted item (0=New Game, 1=Load Game,
                   2=Options, 3=Credits)
     save_exists – if False, Load Game is greyed out
+    enter_ms    – pygame.time.get_ticks() when TITLE was entered (drives flash-in)
     """
-    _overlay(0, 4, 22, 210)
+    scr = display.screen
+    now = pygame.time.get_ticks()
+
+    # ── Background ────────────────────────────────────────────────────────────
+    if assets.main_menu_img:
+        scr.blit(assets.main_menu_img, (0, 0))
+    else:
+        _overlay(0, 4, 22, 210)
 
     # ── Logo ──────────────────────────────────────────────────────────────────
     txt("KIRBY  ×  MILES MORALES", display.f_title, C.HOTPNK,
@@ -132,17 +140,7 @@ def draw_title(sel: int, save_exists: bool) -> None:
     txt("ESL  Adventure", display.f_big, C.GOLD,
         C.SW // 2, 152, center=True, shadow=True)
 
-    # Thin gold divider
-    pygame.draw.line(display.screen, C.GOLD,
-                     (C.SW // 2 - 260, 184), (C.SW // 2 + 260, 184), 2)
-
-    # ── Menu box ──────────────────────────────────────────────────────────────
-    mw, mh = 380, 248
-    mx     = (C.SW - mw) // 2
-    my     = 202
-    pygame.draw.rect(display.screen, (10, 22, 70), (mx, my, mw, mh), border_radius=14)
-    pygame.draw.rect(display.screen, C.GOLD,       (mx, my, mw, mh), border_radius=14, width=2)
-
+    # ── Menu items (no box — selected item pulses) ────────────────────────────
     ITEMS = [
         ("NEW GAME",  True),
         ("LOAD GAME", save_exists),
@@ -150,31 +148,40 @@ def draw_title(sel: int, save_exists: bool) -> None:
         ("CREDITS",   True),
     ]
 
-    item_h = 52
+    menu_top = 230   # centre-y of first item
+    item_h   = 60
+
+    # Slow sine pulse: alpha oscillates between 60 and 255 (~1.4 s period)
+    pulse_alpha = int(60 + 195 * (math.sin(now * math.pi / 700) * 0.5 + 0.5))
+
     for i, (label, enabled) in enumerate(ITEMS):
-        iy     = my + 18 + i * item_h
+        cy     = menu_top + i * item_h
         is_sel = (i == sel)
 
-        if is_sel and enabled:
-            # Highlight pill
-            hcol = (40, 80, 200)
-            pygame.draw.rect(display.screen, hcol,
-                             (mx + 18, iy, mw - 36, 42), border_radius=8)
-            pygame.draw.rect(display.screen, C.GOLD,
-                             (mx + 18, iy, mw - 36, 42), border_radius=8, width=1)
-
         if not enabled:
-            col = C.DKGRAY
+            txt(label, display.f_med, C.DKGRAY, C.SW // 2, cy, center=True)
         elif is_sel:
-            col = C.GOLD
+            surf = display.f_med.render(label, True, C.GOLD)
+            surf.set_alpha(pulse_alpha)
+            scr.blit(surf, surf.get_rect(center=(C.SW // 2, cy)))
         else:
-            col = C.WHITE
-
-        txt(label, display.f_med, col, C.SW // 2, iy + 11, center=True)
+            txt(label, display.f_med, C.WHITE, C.SW // 2, cy, center=True)
 
     # ── Navigation hint ────────────────────────────────────────────────────────
     txt("W / S  or  ↑ ↓  to navigate    ENTER to select",
         display.f_xs, C.GRAY, C.SW // 2, C.SH - 30, center=True)
+
+    # ── Epic flash-in (white overlay decaying on entry) ───────────────────────
+    if enter_ms > 0:
+        elapsed  = now - enter_ms
+        _FLASH_MS = 900
+        if elapsed < _FLASH_MS:
+            flash_a = max(0, int(255 * (1.0 - elapsed / _FLASH_MS) ** 2))
+            if flash_a:
+                ov = pygame.Surface((C.SW, C.SH))
+                ov.fill((255, 255, 255))
+                ov.set_alpha(flash_a)
+                scr.blit(ov, (0, 0))
 
 
 def draw_title_options(sel: int, vol: float, sfx_vol: float,
@@ -289,7 +296,11 @@ def draw_grade_select(hover: int = 0):
     Grade-selection screen.  hover = 1–6 highlights that card (use 0 for none).
     The player presses 1–6 to pick their grade.
     """
-    _overlay(5, 10, 35, 240)
+    if assets.main_menu_img:
+        display.screen.blit(assets.main_menu_img, (0, 0))
+        _overlay(0, 0, 0, 120)
+    else:
+        _overlay(5, 10, 35, 240)
 
     txt("Kirby  x  Miles Morales", display.f_title, C.HOTPNK,
         C.SW // 2, 38, center=True, shadow=True)
@@ -350,7 +361,11 @@ def draw_char_select(sel: int) -> None:
     Character selection screen.
     sel: 0 = Kirby,  1 = Miles Morales
     """
-    _overlay(0, 5, 25, 230)
+    if assets.main_menu_img:
+        display.screen.blit(assets.main_menu_img, (0, 0))
+        _overlay(0, 0, 0, 120)
+    else:
+        _overlay(0, 5, 25, 230)
 
     txt("CHOOSE YOUR HERO", display.f_title, C.GOLD,
         C.SW // 2, 44, center=True, shadow=True)

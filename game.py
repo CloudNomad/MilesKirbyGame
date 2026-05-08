@@ -86,8 +86,10 @@ def main():
     intro_fade.reset()
 
     # ── Title / options menu state ─────────────────────────────────────────────
-    title_sel = 0   # 0=New Game  1=Load Game  2=Options  3=Credits
-    opts_sel  = 0   # 0=Music Vol  1=Sound Vol  2=Music Track  3=Display Mode  4=Back
+    title_sel      = 0   # 0=New Game  1=Load Game  2=Options  3=Credits
+    opts_sel       = 0   # 0=Music Vol  1=Sound Vol  2=Music Track  3=Display Mode  4=Back
+    title_enter_ms = 0   # ticks when TITLE state was last entered (for flash-in)
+    _prev_state    = None
 
     player, doors, key_items = _build_level(lvl, selected_char)
 
@@ -167,6 +169,7 @@ def main():
     running = True
     while running:
         display.clock.tick(C.FPS)
+        _prev_state = state
 
         # ── Events ───────────────────────────────────────────────────────────
         for ev in pygame.event.get():
@@ -202,13 +205,14 @@ def main():
                 elif state == C.CUTSCENE:
                     cutscene.advance()
                     if cutscene.done:
-                        music.play(0)
+                        music.play_main_menu_track()
                         state = C.TITLE
 
                 elif state == C.SPLASH:
                     # Any key (except the global ones already handled) advances
                     if pygame.time.get_ticks() >= 1500:
                         sfx.play_select()
+                        music.play_main_menu_track()
                         state = C.TITLE
 
                 elif state == C.TITLE:
@@ -370,7 +374,7 @@ def main():
                     if ev.key in (pygame.K_RETURN, pygame.K_r):
                         savegame.delete()
                         full_reset(1, 0, 3, keep_grade=False)
-                        music.play(0)
+                        music.play_main_menu_track()
 
             # ── Mouse click ──────────────────────────────────────────────────
             if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
@@ -379,14 +383,13 @@ def main():
                 if state == C.SPLASH:
                     if pygame.time.get_ticks() >= 1500:
                         sfx.play_select()
+                        music.play_main_menu_track()
                         state = C.TITLE
 
                 elif state == C.TITLE:
-                    _mw, _my0, _iw, _ih, _ih_step = 380, 202, 344, 42, 52
-                    _bx = (C.SW - _mw) // 2 + 18
                     for i in range(4):
-                        iy = _my0 + 18 + i * _ih_step
-                        if _bx <= mx <= _bx + _iw and iy <= my <= iy + _ih:
+                        cy = 230 + i * 60   # centre y of each menu item (matches draw_title)
+                        if abs(my - cy) <= 24 and abs(mx - C.SW // 2) <= 220:
                             title_sel = i
                             sfx.play_select()
                             if i == 0:
@@ -542,9 +545,12 @@ def main():
                 elif state in (C.GAMEOVER, C.GAMEWIN):
                     savegame.delete()
                     full_reset(1, 0, 3, keep_grade=False)
-                    music.play(0)
+                    music.play_main_menu_track()
 
         # ── Update ───────────────────────────────────────────────────────────
+        if state in (C.TITLE, C.TITLE_OPTIONS, C.TITLE_CREDITS, C.CHAR_SELECT, C.GRADE_SELECT):
+            music.update_main_menu()
+
         if state == C.INTRO_FADE:
             if intro_fade.update():
                 music.play_cutscene_track()
@@ -553,7 +559,7 @@ def main():
 
         elif state == C.CUTSCENE:
             if cutscene.update():
-                music.play(0)   # level1.mp3 is now index 0 (cutscene.mp3 excluded)
+                music.play_main_menu_track()
                 state = C.TITLE
 
         elif state == C.TRANSIT_12:
@@ -653,6 +659,10 @@ def main():
                 else:
                     state = C.PLAY
 
+        # Detect entry into TITLE state this frame and record timestamp for flash-in
+        if state == C.TITLE and _prev_state != C.TITLE:
+            title_enter_ms = pygame.time.get_ticks()
+
         # ── Draw ─────────────────────────────────────────────────────────────
 
         # Stage is always drawn (even under fades)
@@ -711,7 +721,7 @@ def main():
         elif state == C.SPLASH:
             draw_splash()
         elif state == C.TITLE:
-            draw_title(title_sel, savegame.exists())
+            draw_title(title_sel, savegame.exists(), title_enter_ms)
         elif state == C.TITLE_OPTIONS:
             draw_title_options(opts_sel, music.volume(), sfx.volume(),
                                music.track_name(), display.current_mode_name())
