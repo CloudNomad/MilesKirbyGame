@@ -39,24 +39,78 @@ _TYPE_DELAY      = 2     # frames between characters  (30 chars/s at 60 fps)
 _PAUSE_FRAMES    = 180   # frames to hold a fully-typed box  (3 s at 60 fps)
 _TEXT_FADE_SPEED = 6     # alpha removed per frame during fade-out  (~0.7 s)
 
-# ── Story segments ──────────────────────────────────────────────────────────────
-_SEGMENTS = [
-    "After their first victory, our heroes pressed onward.\n\n"
-    "Kirby and Miles Morales had proven themselves worthy — "
-    "but the journey was only just beginning.\n\n"
-    "Somewhere ahead, a great city was waiting.",
+# ── Story segments per world transition ─────────────────────────────────────────
+_WORLD_SEGMENTS = {
+    2: [
+        "After their first victory, our heroes pressed onward.\n\n"
+        "They had proven themselves worthy — "
+        "but the journey was only just beginning.\n\n"
+        "Somewhere ahead, a great city was waiting.",
 
-    "They wandered into a sprawling metropolis — tall towers of glass "
-    "and steel reaching toward the clouds.\n\n"
-    "The streets buzzed with life, color, and mystery.\n\n"
-    "This city held secrets that no one had ever uncovered.",
+        "They wandered into a sprawling metropolis — tall towers of glass "
+        "and steel reaching toward the clouds.\n\n"
+        "The streets buzzed with life, color, and mystery.\n\n"
+        "This city held secrets that no one had ever uncovered.",
 
-    "Rumor spoke of a hidden artifact — a legendary item said to "
-    "hold the knowledge of the stars themselves.\n\n"
-    "Our hero was exploring when they suddenly wandered into the city's "
-    "ancient district — and they were searching for a secret item.\n\n"
-    "The adventure continues…",
-]
+        "Rumor spoke of a hidden artifact — a legendary item said to "
+        "hold the knowledge of the stars themselves.\n\n"
+        "The adventure continues…",
+    ],
+    3: [
+        "The city faded behind them as our heroes climbed higher.\n\n"
+        "Before them rose ancient mountain peaks — snow-capped and silent.\n\n"
+        "The air was thin, but their determination was stronger.",
+
+        "Legend told of a wise elder who lived at the summit.\n\n"
+        "Only those who could prove their knowledge could seek an audience.\n\n"
+        "The climb would test everything they had learned.",
+
+        "Step by step, word by word, they ascended.\n\n"
+        "The mountains would reveal their secrets — but only to the worthy.\n\n"
+        "The adventure continues…",
+    ],
+    4: [
+        "Beyond the mountains, the land gave way to a glittering coastline.\n\n"
+        "Beneath the waves lay a sunken kingdom — ancient and forgotten.\n\n"
+        "Our heroes dove deep into the shimmering blue.",
+
+        "Strange creatures swam alongside them in the deep.\n\n"
+        "Ruins of a lost civilization stretched across the ocean floor.\n\n"
+        "Knowledge had been preserved here for thousands of years.",
+
+        "The ocean held mysteries that the surface world had forgotten.\n\n"
+        "But our heroes were ready to learn every one of them.\n\n"
+        "The adventure continues…",
+    ],
+    5: [
+        "Rising from the depths, our heroes found themselves lifted skyward.\n\n"
+        "Floating islands drifted through golden clouds above the world.\n\n"
+        "The sky was alive with color, light, and wonder.",
+
+        "Ancient sky temples floated among the clouds.\n\n"
+        "The wind carried whispers of riddles and ancient songs.\n\n"
+        "Every step forward unlocked a new layer of understanding.",
+
+        "Above the clouds, all things seemed possible.\n\n"
+        "Our heroes soared — armed with knowledge and courage.\n\n"
+        "The adventure continues…",
+    ],
+    6: [
+        "At last, the final frontier lay before them — the cosmos itself.\n\n"
+        "Stars stretched in every direction, infinite and magnificent.\n\n"
+        "One last challenge awaited among the stars.",
+
+        "A great guardian stood at the edge of the galaxy.\n\n"
+        "Only those with mastery of language and knowledge could pass.\n\n"
+        "Everything had led to this moment.",
+
+        "This was it — the final test of all they had learned.\n\n"
+        "With courage in their hearts and words on their lips, they stepped forward.\n\n"
+        "The adventure reaches its end…",
+    ],
+}
+
+_SEGMENTS = _WORLD_SEGMENTS[2]   # active list, set by reset()
 
 # ── Internal state ──────────────────────────────────────────────────────────────
 _bg_img      = None   # pygame.Surface or None
@@ -78,28 +132,33 @@ done         = False
 
 # ── Public ──────────────────────────────────────────────────────────────────────
 
-def reset() -> None:
-    """Initialise state.  Call once before entering C.TRANSIT_12."""
-    global _bg_img, _city_lights, _stars_fall
+def reset(to_world: int = 2) -> None:
+    """Initialise state.  Call once before entering C.TRANSIT with the destination world (2-6)."""
+    global _bg_img, _city_lights, _stars_fall, _SEGMENTS
     global _phase, _bg_alpha, _seg_idx, _char_idx
     global _type_timer, _pause_timer, _text_alpha, _wrapped, _flat_text, done
 
-    # Try to load a city background image
+    # Select story text for this transition
+    _SEGMENTS = _WORLD_SEGMENTS.get(to_world, _WORLD_SEGMENTS[2])
+
+    # Try to load a world-specific background image: cutscene{N}_bg.png
     _bg_img = None
-    for ext in ("png", "jpg", "jpeg"):
-        path = os.path.join(os.path.dirname(__file__), "assets",
-                            f"cutscene2_bg.{ext}")
-        if os.path.isfile(path):
-            try:
-                raw     = pygame.image.load(path).convert()
-                _bg_img = pygame.transform.smoothscale(raw, (C.SW, C.SH))
-                print(f"[cutscene2] Loaded background: cutscene2_bg.{ext}")
-            except pygame.error as e:
-                print(f"[cutscene2] Could not load cutscene2_bg.{ext}: {e}")
+    for name in (f"cutscene{to_world}_bg", "cutscene2_bg"):
+        for ext in ("png", "jpg", "jpeg"):
+            path = os.path.join(os.path.dirname(__file__), "assets", f"{name}.{ext}")
+            if os.path.isfile(path):
+                try:
+                    raw     = pygame.image.load(path).convert()
+                    _bg_img = pygame.transform.smoothscale(raw, (C.SW, C.SH))
+                    print(f"[cutscene2] Loaded background: {name}.{ext}")
+                except pygame.error as e:
+                    print(f"[cutscene2] Could not load {name}.{ext}: {e}")
+                break
+        if _bg_img is not None:
             break
 
     if _bg_img is None:
-        print("[cutscene2] No cutscene2_bg image found — using procedural city skyline.")
+        print(f"[cutscene2] No background for world {to_world} — using procedural city skyline.")
 
     # Procedural city-light fallback
     rng = random.Random(99)

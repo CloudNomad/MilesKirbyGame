@@ -78,6 +78,7 @@ def main():
     sfx.init()
 
     lvl            = 1
+    stage          = 1        # stage within current world (1-5); 5 → world done
     score          = 0
     selected_grade = 0        # set on grade-select screen; 0 = not yet chosen
     selected_char  = "kirby"  # set on char-select screen: "kirby" or "miles"
@@ -134,13 +135,14 @@ def main():
         return 1
 
     def full_reset(new_lvl, new_score, new_lives, keep_grade=True):
-        nonlocal lvl, score, state, player, doors, key_items
+        nonlocal lvl, stage, score, state, player, doors, key_items
         nonlocal door_questions, doors_completed, selected_grade
         nonlocal flash_msg, flash_timer, fade_alpha
         nonlocal active_door, active_q, stage_track_idx
         nonlocal bonus_q, bonus_won, title_sel
         nonlocal level_stars, total_stars
         lvl   = new_lvl
+        stage = 1
         score = new_score
         player, doors, key_items = _build_level(lvl, selected_char)
         player.lives     = new_lives
@@ -151,12 +153,12 @@ def main():
         fade_alpha       = 0
         active_door      = None
         active_q         = None
-        music.play(new_lvl - 1)          # level 1 = index 0, level 2 = index 1, …
+        music.play(new_lvl - 1)          # world 1 = index 0, world 2 = index 1, …
         stage_track_idx  = new_lvl - 1
         bonus_q          = None
         bonus_won        = None
         title_sel        = 0
-        level_stars      = 0             # fresh star count for each level
+        level_stars      = 0             # fresh star count for each world
         if not keep_grade:
             total_stars  = 0            # full game restart — wipe total
         if keep_grade and selected_grade:
@@ -164,6 +166,22 @@ def main():
         else:
             selected_grade = 0
             state = C.TITLE
+
+    def _advance_stage():
+        """Reset doors/keys for the next stage within the same world."""
+        nonlocal stage, doors, key_items, door_questions, doors_completed
+        nonlocal flash_msg, flash_timer, state
+        stage += 1
+        doors, key_items = new_level_data(lvl)
+        player.x  = 60.0
+        player.y  = float(C.SH // 2)
+        player.vx = player.vy = 0
+        player.keys = []
+        door_questions  = {}
+        doors_completed = set()
+        flash_msg  = ""
+        flash_timer = 0
+        state = C.PLAY
 
     # ── Main loop ─────────────────────────────────────────────────────────────
     running = True
@@ -258,6 +276,7 @@ def main():
                     elif ev.key in (pygame.K_RETURN, pygame.K_SPACE):
                         sfx.play_select()
                         selected_char = "kirby" if char_sel == 0 else "miles"
+                        player, doors, key_items = _build_level(lvl, selected_char)
                         state = C.GRADE_SELECT
 
                 elif state == C.TITLE_OPTIONS:
@@ -305,11 +324,12 @@ def main():
                     if chosen:
                         sfx.play_grade_select()
                         selected_grade = chosen
+                        music.play(0)
+                        stage_track_idx = 0
                         state = C.INTRO
 
                 elif state == C.INTRO:
                     if ev.key in (pygame.K_RETURN, pygame.K_SPACE):
-                        stage_track_idx = music.track_index()
                         state = C.PLAY
 
                 elif state == C.PLAY:
@@ -358,17 +378,15 @@ def main():
                     if ev.key in (pygame.K_RETURN, pygame.K_SPACE):
                         if lvl >= C.TOTAL:
                             state = C.GAMEWIN
-                        elif lvl == 1:
-                            cutscene2.reset()
-                            music.play_cutscene2_track()
-                            state = C.TRANSIT_12
                         else:
-                            full_reset(lvl + 1, score, player.lives)
+                            cutscene2.reset(lvl + 1)
+                            music.play_transition_track(lvl + 1)
+                            state = C.TRANSIT
 
-                elif state == C.TRANSIT_12:
+                elif state == C.TRANSIT:
                     cutscene2.advance()
                     if cutscene2.done:
-                        full_reset(2, score, player.lives)
+                        full_reset(lvl + 1, score, player.lives)
 
                 elif state in (C.GAMEOVER, C.GAMEWIN):
                     if ev.key in (pygame.K_RETURN, pygame.K_r):
@@ -450,6 +468,7 @@ def main():
                             char_sel = i
                             sfx.play_select()
                             selected_char = "kirby" if i == 0 else "miles"
+                            player, doors, key_items = _build_level(lvl, selected_char)
                             state = C.GRADE_SELECT
                             break
 
@@ -463,6 +482,8 @@ def main():
                         if gx <= mx <= gx + _cw and gy <= my <= gy + _ch:
                             sfx.play_grade_select()
                             selected_grade = i + 1
+                            music.play(0)
+                            stage_track_idx = 0
                             state = C.INTRO
                             break
 
@@ -535,12 +556,10 @@ def main():
                 elif state == C.LVLDONE:
                     if lvl >= C.TOTAL:
                         state = C.GAMEWIN
-                    elif lvl == 1:
-                        cutscene2.reset()
-                        music.play_cutscene2_track()
-                        state = C.TRANSIT_12
                     else:
-                        full_reset(lvl + 1, score, player.lives)
+                        cutscene2.reset(lvl + 1)
+                        music.play_transition_track(lvl + 1)
+                        state = C.TRANSIT
 
                 elif state in (C.GAMEOVER, C.GAMEWIN):
                     savegame.delete()
@@ -562,9 +581,9 @@ def main():
                 music.play_main_menu_track()
                 state = C.TITLE
 
-        elif state == C.TRANSIT_12:
+        elif state == C.TRANSIT:
             if cutscene2.update():
-                full_reset(2, score, player.lives)
+                full_reset(lvl + 1, score, player.lives)
 
         elif state == C.PLAY:
             # Player movement (suppressed during push-back)
@@ -638,12 +657,14 @@ def main():
         elif state == C.FADE_IN:
             fade_alpha = max(0, fade_alpha - C.FADE_SPEED)
             if fade_alpha <= 0:
-                # level music was never stopped, nothing to resume
-                # Check if all doors are now completed
-                eligible = [d for d in doors if not (d.locked and d.num not in doors_completed)]
                 if all(d.completed for d in doors):
-                    savegame.save(selected_grade, lvl, score, player.lives)
-                    state = C.LVLDONE
+                    if stage < 5:
+                        # More stages remain in this world — reset doors
+                        _advance_stage()
+                    else:
+                        # All 5 stages done — world complete
+                        savegame.save(selected_grade, lvl, score, player.lives)
+                        state = C.LVLDONE
                 else:
                     state = C.PLAY
 
@@ -677,7 +698,7 @@ def main():
 
         # HUD only shown during active gameplay
         if state in (C.PLAY, C.FADE_OUT, C.FADE_IN, C.DOOR_QUESTION):
-            draw_hud(lvl, player.lives, score, player.keys, doors_completed, total_stars)
+            draw_hud(lvl, player.lives, score, player.keys, doors_completed, total_stars, stage)
 
         # Flash message (centred in play area, only during PLAY)
         if flash_timer > 0 and state == C.PLAY:
@@ -715,7 +736,7 @@ def main():
         elif state == C.CUTSCENE:
             cutscene.draw()
 
-        elif state == C.TRANSIT_12:
+        elif state == C.TRANSIT:
             cutscene2.draw()
 
         elif state == C.SPLASH:

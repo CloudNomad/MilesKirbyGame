@@ -48,14 +48,16 @@ def _draw_star(x: int, y: int, size: int, filled: bool) -> None:
 
 
 def draw_hud(lvl: int, lives: int, score: int,
-             keys_held: list, doors_completed: set, total_stars: int = 0):
+             keys_held: list, doors_completed: set, total_stars: int = 0,
+             stage: int = 1):
     """
-    lvl             – current level number
+    lvl             – current world number (1-6)
     lives           – remaining lives
     score           – current score
     keys_held       – list of door numbers for which the player holds a key
     doors_completed – set of door nums answered correctly (e.g. {1, 3})
     total_stars     – accumulated stars earned across all answered questions
+    stage           – current stage within the world (1-5)
     """
     # ── Stats bar ─────────────────────────────────────────────────────────────
     bar = pygame.Surface((C.SW, C.HUD_H), pygame.SRCALPHA)
@@ -64,12 +66,13 @@ def draw_hud(lvl: int, lives: int, score: int,
     pygame.draw.line(display.screen, C.GOLD, (0, C.HUD_H), (C.SW, C.HUD_H), 2)
 
     # Left side: game stats
-    txt(f"Level {lvl}/{C.TOTAL}", display.f_sm, C.GOLD,   12,  12)
-    txt(f"Lives: {lives}",        display.f_sm, C.RED,    168,  12)
-    txt(f"Score: {score}",        display.f_sm, C.YELLOW, 284,  12)
+    txt(f"World {lvl}/{C.TOTAL}", display.f_sm, C.GOLD,   12,  12)
+    txt(f"Stage {stage}/5",       display.f_sm, C.CYAN,   148,  12)
+    txt(f"Lives: {lives}",        display.f_sm, C.RED,    250,  12)
+    txt(f"Score: {score}",        display.f_sm, C.YELLOW, 366,  12)
     if keys_held:
         txt("Keys: " + "  ".join(f"D{k}" for k in keys_held),
-            display.f_sm, C.GOLD, 450, 12)
+            display.f_sm, C.GOLD, 500, 12)
 
     # Stars tally
     if total_stars > 0:

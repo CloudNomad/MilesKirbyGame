@@ -596,22 +596,21 @@ def draw_bonus_res(won: bool):
 
 def draw_lvl_done(lvl: int, score: int, level_stars: int = 0, total_stars: int = 0):
     _overlay(0, 20, 0, 185)
-    txt(f"Level {lvl} Complete!", display.f_title, C.GREEN,
+    txt(f"World {lvl} Complete!", display.f_title, C.GREEN,
         C.SW // 2, 160, center=True, shadow=True)
     txt(f"Score: {score}", display.f_big, C.GOLD,
         C.SW // 2, 238, center=True)
 
-    # ── Stars earned this level ───────────────────────────────────────────────
-    txt("Stars this level", display.f_sm, C.LGRAY,
-        C.SW // 2, 288, center=True)
-    _draw_stars(C.SW // 2, 322, level_stars, total=15, size=14)
+    # ── Stars earned this world (max 75: 5 stages × 3 doors × 5 stars) ────────
+    txt(f"Stars this world:  ★ {level_stars}", display.f_med, C.GOLD,
+        C.SW // 2, 295, center=True)
 
     # ── Running total ─────────────────────────────────────────────────────────
-    txt(f"Total stars:  {total_stars}", display.f_med, C.GOLD,
-        C.SW // 2, 358, center=True)
+    txt(f"Total stars:  ★ {total_stars}", display.f_med, C.YELLOW,
+        C.SW // 2, 340, center=True)
 
     if lvl < C.TOTAL:
-        txt(f"Next: Level {lvl + 1}  –  Grade {lvl + 1} challenges!",
+        txt(f"Next: World {lvl + 1}  –  Grade {lvl + 1} challenges!",
             display.f_med, C.CYAN, C.SW // 2, 400, center=True)
     txt("Press ENTER or SPACE to continue", display.f_sm, C.YELLOW,
         C.SW // 2, 450, center=True)

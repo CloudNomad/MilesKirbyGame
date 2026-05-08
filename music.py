@@ -41,18 +41,19 @@ _index:  int       = 0      # currently loaded track index
 _muted:  bool      = False
 _volume: float     = 0.7    # 0.0 – 1.0
 
-_question_track:   str | None = None   # path to question.mp3    (None if not found)
-_cutscene_track:   str | None = None   # path to cutscene.mp3    (None if not found)
-_cutscene2_track:  str | None = None   # path to cutscene2.mp3   (None if not found)
-_main_menu_track:  str | None = None   # path to MainMenu.mp3    (None if not found)
-_main_menu_active: bool       = False  # True while MainMenu.mp3 is the loaded track
+_question_track:    str | None  = None   # path to question.mp3    (None if not found)
+_cutscene_track:    str | None  = None   # path to cutscene.mp3    (None if not found)
+_main_menu_track:   str | None  = None   # path to MainMenu.mp3    (None if not found)
+_main_menu_active:  bool        = False  # True while MainMenu.mp3 is the loaded track
+_transition_tracks: dict        = {}     # to_world (2-6) → path or None
 
 _MUSIC_DIR        = os.path.join(os.path.dirname(__file__), "assets", "music")
 _SUPPORTED        = {".mp3"}
 _QUESTION_FILE    = "question.mp3"    # reserved — door question screen
 _CUTSCENE_FILE    = "cutscene.mp3"    # reserved — opening cutscene
-_CUTSCENE2_FILE   = "cutscene2.mp3"   # reserved — level 1→2 transition cutscene
 _MAIN_MENU_FILE   = "MainMenu.mp3"    # reserved — title screen
+# World transition tracks: cutscene2.mp3 … cutscene6.mp3
+_TRANSITION_FILES = {w: f"cutscene{w}.mp3" for w in range(2, 7)}
 
 # MainMenu.mp3 is 75.05 s; loop 3 s early so the transition is seamless.
 _MAIN_MENU_LOOP_MS = int((75.05 - 3.0) * 1000)   # 72 050 ms
@@ -69,7 +70,8 @@ def init() -> None:
     question.mp3 is reserved for the door-question screen and is excluded
     from the normal stage playlist.
     """
-    global _tracks, _index, _question_track, _cutscene_track, _cutscene2_track, _main_menu_track
+    global _tracks, _index, _question_track, _cutscene_track, _main_menu_track
+    global _transition_tracks
 
     try:
         pygame.mixer.init()
@@ -88,15 +90,25 @@ def init() -> None:
         if os.path.splitext(f)[1].lower() in _SUPPORTED
     )
 
-    # Separate reserved tracks from the stage playlist
-    _RESERVED = {_QUESTION_FILE, _CUTSCENE_FILE, _CUTSCENE2_FILE, _MAIN_MENU_FILE}
+    # Build transition track dict (world 2-6)
+    _transition_tracks = {}
+    _transition_fnames = set()
+    for w, fname in _TRANSITION_FILES.items():
+        path = os.path.join(_MUSIC_DIR, fname)
+        _transition_tracks[w] = path if os.path.isfile(path) else None
+        _transition_fnames.add(fname)
+        if _transition_tracks[w]:
+            print(f"[music] Transition track (→ world {w}): {fname}")
+        else:
+            print(f"[music] No transition track for world {w} (add assets/music/{fname})")
+
+    # Separate remaining reserved tracks from the stage playlist
+    _RESERVED = {_QUESTION_FILE, _CUTSCENE_FILE, _MAIN_MENU_FILE} | _transition_fnames
     q_path  = os.path.join(_MUSIC_DIR, _QUESTION_FILE)
     c_path  = os.path.join(_MUSIC_DIR, _CUTSCENE_FILE)
-    c2_path = os.path.join(_MUSIC_DIR, _CUTSCENE2_FILE)
     mm_path = os.path.join(_MUSIC_DIR, _MAIN_MENU_FILE)
     _question_track  = q_path  if os.path.isfile(q_path)  else None
     _cutscene_track  = c_path  if os.path.isfile(c_path)  else None
-    _cutscene2_track = c2_path if os.path.isfile(c2_path) else None
     _main_menu_track = mm_path if os.path.isfile(mm_path) else None
     _tracks = [t for t in all_files
                if os.path.basename(t) not in _RESERVED]
@@ -110,10 +122,6 @@ def init() -> None:
         print(f"[music] Cutscene track:   {_CUTSCENE_FILE}")
     else:
         print(f"[music] No cutscene track found (add assets/music/{_CUTSCENE_FILE} for a dedicated track)")
-    if _cutscene2_track:
-        print(f"[music] Cutscene 2 track: {_CUTSCENE2_FILE}")
-    else:
-        print(f"[music] No cutscene2 track found (add assets/music/{_CUTSCENE2_FILE} for a dedicated track)")
     if _main_menu_track:
         print(f"[music] Main menu track:  {_MAIN_MENU_FILE}")
     else:
@@ -220,25 +228,29 @@ def play_cutscene_track() -> None:
         play(0)
 
 
-def play_cutscene2_track() -> None:
+def play_transition_track(to_world: int) -> None:
     """
-    Play the dedicated level-transition track (cutscene2.mp3) on loop.
-    If the file is missing, the currently playing track continues unchanged —
-    level 2 music will start automatically when full_reset() is called after
-    the cutscene ends.
+    Play the world-transition track for the given destination world (2-6).
+    Uses cutscene{to_world}.mp3; stops music if the file is not found.
     """
-    if _cutscene2_track:
+    global _main_menu_active
+    _main_menu_active = False
+    track = _transition_tracks.get(to_world)
+    if track:
         try:
-            pygame.mixer.music.load(_cutscene2_track)
+            pygame.mixer.music.load(track)
             pygame.mixer.music.set_volume(0.0 if _muted else _volume)
             pygame.mixer.music.play(-1)
         except pygame.error as e:
-            print(f"[music] Could not play cutscene2 track: {e}")
+            print(f"[music] Could not play transition track for world {to_world}: {e}")
             pygame.mixer.music.stop()
     else:
-        print(f"[music] cutscene2.mp3 not found — stopping music during transition"
-              f" (add assets/music/cutscene2.mp3 for a dedicated track)")
         pygame.mixer.music.stop()
+
+
+def play_cutscene2_track() -> None:
+    """Alias kept for compatibility — plays the world-1→2 transition track."""
+    play_transition_track(2)
 
 
 def play_main_menu_track() -> None:
