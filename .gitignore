@@ -27,3 +27,6 @@ desktop.ini
 
 # Logs
 *.log
+
+# Large video files — store these locally, not in git
+assets/intro.mp4
