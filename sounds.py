@@ -13,9 +13,13 @@ pygame.mixer must already be initialised (music.init() does this).
 """
 
 import os
+import sys
 import pygame
 
-_SOUNDS_DIR = os.path.join(os.path.dirname(__file__), "assets", "sounds")
+_SOUNDS_DIR = os.path.join(
+    getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))),
+    "assets", "sounds"
+)
 
 _snd:        dict  = {}    # key → pygame.Sound  (populated by init())
 _sfx_volume: float = 0.6   # 0.0 – 1.0  (persists across set_volume calls)
@@ -46,7 +50,7 @@ def init() -> None:
                 try:
                     _snd[key] = pygame.mixer.Sound(path)
                     _snd[key].set_volume(min(1.0, _sfx_volume * _MULTIPLIERS.get(key, 1.0)))
-                    print(f"[sounds] Loaded {key:8s} ← {fname}")
+                    print(f"[sounds] Loaded {key:8s} <- {fname}")
                 except pygame.error as e:
                     print(f"[sounds] Could not load {fname}: {e}")
                 break

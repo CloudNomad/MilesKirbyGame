@@ -65,8 +65,17 @@ FADE_IN       = 14  # fading back in after answering
 CUTSCENE      = 15  # opening cinematic (before title screen)
 CHAR_SELECT   = 16  # character selection screen
 DOOR_CORRECT  = 17  # epic star-reveal popup after a correct door answer
-TRANSIT       = 18  # cinematic transition between worlds (generic)
-INTRO_FADE    = 19  # pre-opening text-fade sequence ("It was a peaceful day…")
+TRANSIT          = 18  # cinematic transition between worlds (generic)
+INTRO_FADE       = 19  # pre-opening text-fade sequence ("It was a peaceful day…")
+TUTORIAL_PROMPT  = 20  # "Would you like a tutorial?" Y / N dialog
+TUTORIAL         = 21  # 4-page guided tutorial with Gizmo
+STAGE_TRANSIT    = 22  # wipe + text animation between stages in a world
+CHAR_CUTSCENE    = 23  # character intro cutscene (after grade selection)
+BOSS_CUTSCENE    = 24  # pre-boss cinematic (after stage 5 complete)
+BOSS_FIGHT       = 25  # RPG-style boss combat
+SECRET           = 26  # secret stage room with one portal + sparkles
+SECRET_SELECT    = 27  # 10-box selection screen inside secret stage
+SECRET_QUIZ      = 28  # Uhyun's factorial quiz (5 questions)
 
 # ─── Fade speed ───────────────────────────────────────────────────────────────
 FADE_SPEED = 9      # alpha units per frame (255/9 ≈ 28 frames = ~0.5 s at 60 fps)

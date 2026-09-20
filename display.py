@@ -171,7 +171,7 @@ def set_mode_idx(idx: int) -> None:
             (w, h), pygame.DOUBLEBUF | pygame.RESIZABLE)
     _win_w, _win_h = window.get_size()
     _dst_rect      = _compute_dst_rect(_win_w, _win_h)
-    print(f"[display] Mode → {current_mode_name()}  ({_win_w}×{_win_h})")
+    print(f"[display] Mode -> {current_mode_name()}  ({_win_w}x{_win_h})")
 
 
 # ── Internal ──────────────────────────────────────────────────────────────────

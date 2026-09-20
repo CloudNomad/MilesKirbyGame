@@ -71,13 +71,6 @@ def draw_bg(lvl: int = 1) -> None:
     pygame.draw.rect(display.screen, wdk, (0, C.WT - 3,      C.SW, 3))
     pygame.draw.rect(display.screen, wdk, (0, C.SH - 3,      C.SW, 3))
 
-    # ── Left-side ENTER indicator ─────────────────────────────────────────────
-    arrow_col = (200, 200, 200) if lvl == 6 else C.GRAY
-    ay = C.SH // 2
-    txt("ENTER", display.f_xs, arrow_col, 8, ay - 26)
-    pygame.draw.line(display.screen, arrow_col, (12, ay), (76, ay), 3)
-    pygame.draw.polygon(display.screen, arrow_col,
-                        [(76, ay - 8), (96, ay), (76, ay + 8)])
 
 
 # ── Procedural decorations per level ─────────────────────────────────────────

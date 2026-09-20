@@ -52,15 +52,22 @@ from screens    import (draw_splash, draw_title, draw_title_options,
                         draw_title_credits, draw_char_select, draw_grade_select,
                         draw_intro, draw_door_question, draw_star_reveal,
                         draw_bonus_q, draw_bonus_res, draw_lvl_done,
-                        draw_gameover, draw_gamewin)
+                        draw_gameover, draw_gamewin,
+                        draw_tutorial_prompt, draw_tutorial)
 import save     as savegame
 import sounds   as sfx
 import cutscene
 import cutscene2
 import intro_fade
+import stage_transition
+import char_cutscene
+import boss_cutscene
+import boss_fight
+import debug_menu
+import secret_stage
 from player     import Player
 from level      import new_level_data, random_bonus_question
-from questions  import get_door_question
+from questions  import get_door_question, UHYUN_QS
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -81,10 +88,13 @@ def main():
     stage          = 1        # stage within current world (1-5); 5 → world done
     score          = 0
     selected_grade = 0        # set on grade-select screen; 0 = not yet chosen
-    selected_char  = "kirby"  # set on char-select screen: "kirby" or "miles"
-    char_sel       = 0        # 0 = Kirby, 1 = Miles (cursor on char-select screen)
+    selected_char     = "kirby"  # set on char-select screen: "kirby", "miles", "secret1", "secret2"
+    char_sel          = 0        # 0=Kirby  1=Miles  2=Secret (cursor on char-select screen)
+    secret_char_popup = False    # True when secret characters sub-panel is open
+    secret_char_sel   = 0        # 0-5 slot highlighted inside secret popup
     state          = C.INTRO_FADE
-    intro_fade.reset()
+    # intro_fade.reset() is called just before the game loop (see below) so the
+    # sentence timer starts at the first real frame, not during slow initialisation.
 
     # ── Title / options menu state ─────────────────────────────────────────────
     title_sel      = 0   # 0=New Game  1=Load Game  2=Options  3=Credits
@@ -97,6 +107,7 @@ def main():
     # ── Per-level question + completion tracking ───────────────────────────────
     door_questions  = {}   # door_num → question dict (drawn on first touch)
     doors_completed = set()  # door nums answered correctly this level
+    used_ids        = set()  # id()s of questions already seen this world (no-repeat)
 
     # ── Flash message ─────────────────────────────────────────────────────────
     flash_msg   = ""
@@ -121,6 +132,21 @@ def main():
     bonus_won = None
     b_timer   = 0
 
+    # ── Tutorial ──────────────────────────────────────────────────────────────
+    tutorial_page = 0   # current tutorial page (0-3)
+    tutorial_sel  = 0   # Y/N selection on prompt screen (0=Yes, 1=No)
+
+    # ── Secret stage ─────────────────────────────────────────────────────────
+    secret_return_pos  = (C.SW // 2, C.SH // 2)   # player pos to restore on exit
+    secret_q_idx       = 0                          # current question index (0-4)
+    secret_answers     = []                          # True/False per question answered
+    secret_q_sel       = -1                          # last chosen answer index (-1 = none)
+    # fade routing: "secret_enter" | "secret_fadein" | "portal_enter" | None
+    _fade_target       = None
+
+    # ── Save indicator ────────────────────────────────────────────────────────
+    save_timer    = 0   # counts down from 120 (2 s) after each autosave
+
     # ── Local helpers ─────────────────────────────────────────────────────────
     def flash(msg, col=C.WHITE, dur=110):
         nonlocal flash_msg, flash_timer, flash_col
@@ -136,11 +162,11 @@ def main():
 
     def full_reset(new_lvl, new_score, new_lives, keep_grade=True):
         nonlocal lvl, stage, score, state, player, doors, key_items
-        nonlocal door_questions, doors_completed, selected_grade
+        nonlocal door_questions, doors_completed, used_ids, selected_grade
         nonlocal flash_msg, flash_timer, fade_alpha
         nonlocal active_door, active_q, stage_track_idx
         nonlocal bonus_q, bonus_won, title_sel
-        nonlocal level_stars, total_stars
+        nonlocal level_stars, total_stars, save_timer
         lvl   = new_lvl
         stage = 1
         score = new_score
@@ -148,6 +174,7 @@ def main():
         player.lives     = new_lives
         door_questions   = {}
         doors_completed  = set()
+        used_ids         = set()
         flash_msg        = ""
         flash_timer      = 0
         fade_alpha       = 0
@@ -159,6 +186,7 @@ def main():
         bonus_won        = None
         title_sel        = 0
         level_stars      = 0             # fresh star count for each world
+        save_timer       = 0
         if not keep_grade:
             total_stars  = 0            # full game restart — wipe total
         if keep_grade and selected_grade:
@@ -183,7 +211,112 @@ def main():
         flash_timer = 0
         state = C.PLAY
 
+    def _draw_secret_overlay(cur_state, q_idx, answers):
+        """Draw the SECRET_SELECT or SECRET_QUIZ panel over the secret stage."""
+        scr = display.screen
+
+        # Semi-transparent dark backdrop
+        overlay = pygame.Surface((C.SW, C.SH), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 170))
+        scr.blit(overlay, (0, 0))
+
+        if cur_state == C.SECRET_SELECT:
+            # ── Title ──────────────────────────────────────────────────────────
+            title = display.f_big.render("SECRET  STAGE  SELECT", True, (210, 150, 255))
+            scr.blit(title, (C.SW // 2 - title.get_width() // 2, 40))
+
+            # ── 10 boxes (2 columns × 5 rows) ─────────────────────────────────
+            bw, bh, gap = 380, 72, 16
+            cols = 2
+            total_w = cols * bw + (cols - 1) * gap
+            total_h = 5 * bh + 4 * gap
+            bx0 = (C.SW - total_w) // 2
+            by0 = (C.SH - total_h) // 2 + 30
+
+            for i in range(10):
+                col = i % cols
+                row = i // cols
+                bx  = bx0 + col * (bw + gap)
+                by  = by0 + row * (bh + gap)
+
+                if i == 0:
+                    box_col  = (70, 40, 110)
+                    bdr_col  = (180, 100, 255)
+                    txt_col  = (230, 180, 255)
+                    label    = "Uhyun  Questions"
+                    sub      = "Factorial Math  (5 Qs)"
+                else:
+                    box_col  = (30, 30, 50)
+                    bdr_col  = (80, 80, 110)
+                    txt_col  = (100, 100, 130)
+                    label    = "???"
+                    sub      = ""
+
+                pygame.draw.rect(scr, box_col, (bx, by, bw, bh), border_radius=10)
+                pygame.draw.rect(scr, bdr_col, (bx, by, bw, bh), 2, border_radius=10)
+
+                lbl_surf = display.f_med.render(label, True, txt_col)
+                scr.blit(lbl_surf, (bx + 16, by + 10))
+                if sub:
+                    sub_surf = display.f_xs.render(sub, True, (170, 130, 220))
+                    scr.blit(sub_surf, (bx + 16, by + bh - sub_surf.get_height() - 8))
+
+            hint = display.f_xs.render("ESC to return", True, (130, 130, 160))
+            scr.blit(hint, (C.SW // 2 - hint.get_width() // 2, C.SH - 28))
+
+        elif cur_state == C.SECRET_QUIZ:
+            if q_idx >= len(UHYUN_QS):
+                # ── Results screen ─────────────────────────────────────────────
+                correct = sum(answers)
+                title   = display.f_big.render(
+                    f"Results:  {correct} / {len(UHYUN_QS)}", True, (220, 200, 255))
+                scr.blit(title, (C.SW // 2 - title.get_width() // 2, 140))
+
+                for i, q in enumerate(UHYUN_QS):
+                    col = (100, 255, 140) if answers[i] else (255, 100, 100)
+                    mark = "✓" if answers[i] else "✗"
+                    line = display.f_sm.render(
+                        f"{mark}  {q['q']}  →  {q['opts'][q['ans']]}", True, col)
+                    scr.blit(line, (C.SW // 2 - line.get_width() // 2, 220 + i * 52))
+
+                prompt = display.f_xs.render(
+                    "Click or press ENTER / SPACE to continue", True, (160, 160, 200))
+                scr.blit(prompt, (C.SW // 2 - prompt.get_width() // 2, C.SH - 50))
+            else:
+                # ── Question screen ────────────────────────────────────────────
+                q = UHYUN_QS[q_idx]
+                prog = display.f_xs.render(
+                    f"Uhyun Questions   {q_idx + 1} / {len(UHYUN_QS)}", True, (180, 140, 255))
+                scr.blit(prog, (C.SW // 2 - prog.get_width() // 2, 50))
+
+                q_surf = display.f_big.render(q["q"], True, (230, 210, 255))
+                scr.blit(q_surf, (C.SW // 2 - q_surf.get_width() // 2, 140))
+
+                bw, bh = 260, 60
+                gap    = 14
+                grid_w = bw * 2 + gap
+                gx     = (C.SW - grid_w) // 2
+                gy     = C.SH // 2 + 20
+                labels = ["A", "B", "C", "D"]
+                for i, opt in enumerate(q["opts"]):
+                    abx = gx + (i % 2) * (bw + gap)
+                    aby = gy + (i // 2) * (bh + gap)
+                    pygame.draw.rect(scr, (50, 30, 80), (abx, aby, bw, bh), border_radius=8)
+                    pygame.draw.rect(scr, (160, 100, 255), (abx, aby, bw, bh), 2, border_radius=8)
+                    opt_txt = display.f_sm.render(
+                        f"{labels[i]}.  {opt}", True, (220, 200, 255))
+                    scr.blit(opt_txt, (abx + 12, aby + bh // 2 - opt_txt.get_height() // 2))
+
+                hint = display.f_xs.render(
+                    "Click an answer or press A / B / C / D", True, (130, 130, 160))
+                scr.blit(hint, (C.SW // 2 - hint.get_width() // 2, C.SH - 28))
+
     # ── Main loop ─────────────────────────────────────────────────────────────
+    # Start the intro timer here (not during slow init) and flush any stale
+    # events that accumulated while assets and music were loading.
+    intro_fade.reset()
+    pygame.event.clear()
+
     running = True
     while running:
         display.clock.tick(C.FPS)
@@ -196,9 +329,36 @@ def main():
 
             if ev.type == pygame.KEYDOWN:
 
-                # ── Quit ──────────────────────────────────────────────────────
+                # Always feed the sequence checker (works in any state)
+                debug_menu.check_seq(ev.key)
+
+                # When the debug input field is open it captures all keys
+                if debug_menu.is_capturing():
+                    debug_menu.handle_keydown(ev)
+                    continue
+
+                # ── Quit / back from secret stage ────────────────────────────
                 if ev.key == pygame.K_ESCAPE:
-                    pygame.quit(); sys.exit()
+                    if state in (C.SECRET_SELECT, C.SECRET_QUIZ):
+                        # Back to the secret area (not the main game)
+                        secret_q_idx   = 0
+                        secret_answers = []
+                        secret_q_sel   = -1
+                        state = C.SECRET
+                    elif state == C.SECRET:
+                        # Exit secret area back to main game
+                        player.x  = float(secret_return_pos[0])
+                        player.y  = float(secret_return_pos[1])
+                        player.vx = player.vy = 0
+                        _fade_target = None
+                        state = C.PLAY
+                    else:
+                        pygame.quit(); sys.exit()
+
+                # ── Debug: 0 → main menu ─────────────────────────────────────
+                elif ev.key == pygame.K_0:
+                    full_reset(1, 0, player.lives, keep_grade=False)
+                    music.play_main_menu_track()
 
                 # ── Music controls (global) ───────────────────────────────────
                 elif ev.key == pygame.K_m:
@@ -225,6 +385,29 @@ def main():
                     if cutscene.done:
                         music.play_main_menu_track()
                         state = C.TITLE
+
+                elif state == C.CHAR_CUTSCENE:
+                    char_cutscene.advance()
+                    if char_cutscene.done:
+                        music.play(stage_track_idx)
+                        state = C.TUTORIAL_PROMPT
+
+                elif state == C.BOSS_CUTSCENE:
+                    boss_cutscene.advance()
+                    if boss_cutscene.done:
+                        boss_fight.reset(selected_char, lvl, boss_cutscene.get_boss_img())
+                        state = C.BOSS_FIGHT
+
+                elif state == C.BOSS_FIGHT:
+                    if boss_fight._phase in ("win", "lose") and boss_fight._result_timer > 90:
+                        if boss_fight.result == "win":
+                            state = C.LVLDONE
+                        else:
+                            savegame.delete()
+                            full_reset(1, 0, 3, keep_grade=False)
+                            music.play_main_menu_track()
+                    else:
+                        boss_fight.handle_key(ev.key)
 
                 elif state == C.SPLASH:
                     # Any key (except the global ones already handled) advances
@@ -261,23 +444,59 @@ def main():
                             state = C.TITLE_CREDITS
 
                 elif state == C.CHAR_SELECT:
-                    if ev.key in (pygame.K_LEFT, pygame.K_a):
-                        char_sel = (char_sel - 1) % 2
-                        sfx.play_nav()
-                    elif ev.key in (pygame.K_RIGHT, pygame.K_d):
-                        char_sel = (char_sel + 1) % 2
-                        sfx.play_nav()
-                    elif ev.key == pygame.K_1:
-                        char_sel = 0
-                        sfx.play_nav()
-                    elif ev.key == pygame.K_2:
-                        char_sel = 1
-                        sfx.play_nav()
-                    elif ev.key in (pygame.K_RETURN, pygame.K_SPACE):
-                        sfx.play_select()
-                        selected_char = "kirby" if char_sel == 0 else "miles"
-                        player, doors, key_items = _build_level(lvl, selected_char)
-                        state = C.GRADE_SELECT
+                    if secret_char_popup:
+                        # Navigate the 6-slot secret popup (3 cols × 2 rows)
+                        if ev.key == pygame.K_ESCAPE:
+                            secret_char_popup = False
+                            sfx.play_nav()
+                        elif ev.key in (pygame.K_LEFT, pygame.K_a):
+                            secret_char_sel = (secret_char_sel - 1) % 6
+                            sfx.play_nav()
+                        elif ev.key in (pygame.K_RIGHT, pygame.K_d):
+                            secret_char_sel = (secret_char_sel + 1) % 6
+                            sfx.play_nav()
+                        elif ev.key in (pygame.K_UP, pygame.K_w):
+                            secret_char_sel = (secret_char_sel - 3) % 6
+                            sfx.play_nav()
+                        elif ev.key in (pygame.K_DOWN, pygame.K_s):
+                            secret_char_sel = (secret_char_sel + 3) % 6
+                            sfx.play_nav()
+                        elif ev.key in (pygame.K_RETURN, pygame.K_SPACE):
+                            if secret_char_sel < 2:
+                                sfx.play_select()
+                                selected_char = f"secret{secret_char_sel + 1}"
+                                secret_char_popup = False
+                                player, doors, key_items = _build_level(lvl, selected_char)
+                                state = C.GRADE_SELECT
+                    else:
+                        if ev.key in (pygame.K_LEFT, pygame.K_a):
+                            char_sel = (char_sel - 1) % 3
+                            sfx.play_nav()
+                        elif ev.key in (pygame.K_RIGHT, pygame.K_d):
+                            char_sel = (char_sel + 1) % 3
+                            sfx.play_nav()
+                        elif ev.key == pygame.K_1:
+                            char_sel = 0
+                            sfx.play_nav()
+                        elif ev.key == pygame.K_2:
+                            char_sel = 1
+                            sfx.play_nav()
+                        elif ev.key == pygame.K_3:
+                            char_sel = 2
+                            sfx.play_nav()
+                        elif ev.key in (pygame.K_RETURN, pygame.K_SPACE):
+                            sfx.play_select()
+                            if char_sel == 0:
+                                selected_char = "kirby"
+                                player, doors, key_items = _build_level(lvl, selected_char)
+                                state = C.GRADE_SELECT
+                            elif char_sel == 1:
+                                selected_char = "miles"
+                                player, doors, key_items = _build_level(lvl, selected_char)
+                                state = C.GRADE_SELECT
+                            else:
+                                secret_char_popup = True
+                                secret_char_sel   = 0
 
                 elif state == C.TITLE_OPTIONS:
                     if ev.key in (pygame.K_UP, pygame.K_w):
@@ -324,13 +543,78 @@ def main():
                     if chosen:
                         sfx.play_grade_select()
                         selected_grade = chosen
-                        music.play(0)
                         stage_track_idx = 0
+                        tutorial_sel = 0
+                        char_cutscene.reset(selected_char)
+                        music.play_char_cutscene_track(selected_char)
+                        state = C.CHAR_CUTSCENE
+
+                elif state == C.TUTORIAL_PROMPT:
+                    if ev.key in (pygame.K_LEFT, pygame.K_a, pygame.K_RIGHT, pygame.K_d):
+                        tutorial_sel = 1 - tutorial_sel
+                        sfx.play_nav()
+                    elif ev.key == pygame.K_y:
+                        tutorial_page = 0
+                        state = C.TUTORIAL
+                        sfx.play_select()
+                    elif ev.key in (pygame.K_n, pygame.K_ESCAPE):
                         state = C.INTRO
+                        sfx.play_select()
+                    elif ev.key in (pygame.K_RETURN, pygame.K_SPACE):
+                        sfx.play_select()
+                        if tutorial_sel == 0:
+                            tutorial_page = 0
+                            state = C.TUTORIAL
+                        else:
+                            state = C.INTRO
+
+                elif state == C.TUTORIAL:
+                    if ev.key in (pygame.K_RETURN, pygame.K_SPACE):
+                        sfx.play_select()
+                        if tutorial_page < 3:
+                            tutorial_page += 1
+                        else:
+                            state = C.PLAY
+                    elif ev.key == pygame.K_ESCAPE:
+                        sfx.play_select()
+                        state = C.PLAY
 
                 elif state == C.INTRO:
                     if ev.key in (pygame.K_RETURN, pygame.K_SPACE):
                         state = C.PLAY
+
+                elif state == C.SECRET:
+                    pass  # movement via get_pressed(); ESC handled above
+
+                elif state == C.SECRET_SELECT:
+                    # Any key returns to the secret room
+                    secret_q_idx   = 0
+                    secret_answers = []
+                    secret_q_sel   = -1
+                    state = C.SECRET
+
+                elif state == C.SECRET_QUIZ:
+                    if secret_q_idx >= len(UHYUN_QS):
+                        # Results screen — any key dismisses
+                        secret_q_idx   = 0
+                        secret_answers = []
+                        secret_q_sel   = -1
+                        state = C.SECRET
+                    else:
+                        # A/B/C/D answer shortcuts
+                        idx = {pygame.K_a: 0, pygame.K_b: 1,
+                               pygame.K_c: 2, pygame.K_d: 3}.get(ev.key)
+                        if idx is not None:
+                            q = UHYUN_QS[secret_q_idx]
+                            secret_answers.append(idx == q["ans"])
+                            secret_q_sel = idx
+                            secret_q_idx += 1
+                        elif ev.key == pygame.K_ESCAPE:
+                            # ESC mid-quiz → back to select screen
+                            secret_q_idx   = 0
+                            secret_answers = []
+                            secret_q_sel   = -1
+                            state = C.SECRET_SELECT
 
                 elif state == C.PLAY:
                     pass  # movement via get_pressed()
@@ -398,6 +682,9 @@ def main():
             if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                 mx, my = display.to_canvas(ev.pos)
 
+                if debug_menu.handle_click(mx, my):
+                    continue   # consumed by debug panel
+
                 if state == C.SPLASH:
                     if pygame.time.get_ticks() >= 1500:
                         sfx.play_select()
@@ -460,17 +747,53 @@ def main():
                     sfx.play_select(); state = C.TITLE
 
                 elif state == C.CHAR_SELECT:
-                    _cw, _ch, _gap = 360, 430, 60
-                    _lx = (C.SW - (_cw * 2 + _gap)) // 2
-                    for i in range(2):
-                        cx2 = _lx + i * (_cw + _gap)
-                        if cx2 <= mx <= cx2 + _cw and 108 <= my <= 108 + _ch:
-                            char_sel = i
-                            sfx.play_select()
-                            selected_char = "kirby" if i == 0 else "miles"
-                            player, doors, key_items = _build_level(lvl, selected_char)
-                            state = C.GRADE_SELECT
-                            break
+                    _cw, _ch, _gap = 310, 430, 30
+                    _lx = (C.SW - (_cw * 3 + _gap * 2)) // 2
+                    if secret_char_popup:
+                        # Check popup slot clicks
+                        _pw, _ph = 720, 420
+                        _px = (C.SW - _pw) // 2
+                        _py = (C.SH - _ph) // 2
+                        _sw2, _sh2 = 190, 120
+                        _cols2 = 3
+                        _gx2 = (_pw - _sw2 * _cols2) // (_cols2 + 1)
+                        _gy2 = 18
+                        _gt  = _py + 72
+                        for idx in range(6):
+                            _ci = idx % _cols2
+                            _ri = idx // _cols2
+                            _sx2 = _px + _gx2 + _ci * (_sw2 + _gx2)
+                            _sy2 = _gt + _ri * (_sh2 + _gy2)
+                            if _sx2 <= mx <= _sx2 + _sw2 and _sy2 <= my <= _sy2 + _sh2:
+                                if idx < 2:
+                                    sfx.play_select()
+                                    secret_char_sel   = idx
+                                    selected_char     = f"secret{idx + 1}"
+                                    secret_char_popup = False
+                                    player, doors, key_items = _build_level(lvl, selected_char)
+                                    state = C.GRADE_SELECT
+                                break
+                        # Click outside popup closes it
+                        if not (_px <= mx <= _px + _pw and _py <= my <= _py + _ph):
+                            secret_char_popup = False
+                    else:
+                        for i in range(3):
+                            cx2 = _lx + i * (_cw + _gap)
+                            if cx2 <= mx <= cx2 + _cw and 108 <= my <= 108 + _ch:
+                                char_sel = i
+                                sfx.play_select()
+                                if i == 0:
+                                    selected_char = "kirby"
+                                    player, doors, key_items = _build_level(lvl, selected_char)
+                                    state = C.GRADE_SELECT
+                                elif i == 1:
+                                    selected_char = "miles"
+                                    player, doors, key_items = _build_level(lvl, selected_char)
+                                    state = C.GRADE_SELECT
+                                else:
+                                    secret_char_popup = True
+                                    secret_char_sel   = 0
+                                break
 
                 elif state == C.GRADE_SELECT:
                     _cw, _ch, _gap = 318, 118, 16
@@ -482,9 +805,32 @@ def main():
                         if gx <= mx <= gx + _cw and gy <= my <= gy + _ch:
                             sfx.play_grade_select()
                             selected_grade = i + 1
-                            music.play(0)
                             stage_track_idx = 0
-                            state = C.INTRO
+                            tutorial_sel = 0
+                            char_cutscene.reset(selected_char)
+                            music.play_char_cutscene_track(selected_char)
+                            state = C.CHAR_CUTSCENE
+                            break
+
+                elif state == C.TUTORIAL_PROMPT:
+                    # Button layout mirrors draw_tutorial_prompt:
+                    # dx=200, dy=135, bw=190, bh=52, by=dy+248=383
+                    # YES bx=480, NO bx=688
+                    _dw, _dh = 700, 340
+                    _dx = (C.SW - _dw) // 2
+                    _dy = (C.SH - _dh) // 2 - 20
+                    _bw, _bh = 190, 52
+                    _by = _dy + 248
+                    for i in range(2):
+                        _bx = _dx + 280 + i * (_bw + 18)
+                        if _bx <= mx <= _bx + _bw and _by <= my <= _by + _bh:
+                            tutorial_sel = i
+                            sfx.play_select()
+                            if i == 0:
+                                tutorial_page = 0
+                                state = C.TUTORIAL
+                            else:
+                                state = C.INTRO
                             break
 
                 elif state == C.INTRO:
@@ -525,6 +871,51 @@ def main():
                     if pygame.time.get_ticks() - correct_anim_start >= 400:
                         state = C.FADE_IN
 
+                elif state == C.SECRET_SELECT:
+                    # 10 boxes: 2 columns × 5 rows; only box 0 is selectable
+                    _bw, _bh, _gap = 380, 72, 16
+                    _cols = 2
+                    _total_w = _cols * _bw + (_cols - 1) * _gap
+                    _total_h = 5 * _bh + 4 * _gap
+                    _bx0 = (C.SW - _total_w) // 2
+                    _by0 = (C.SH - _total_h) // 2 + 30
+                    for i in range(10):
+                        col = i % _cols
+                        row = i // _cols
+                        bx  = _bx0 + col * (_bw + _gap)
+                        by  = _by0 + row * (_bh + _gap)
+                        if bx <= mx <= bx + _bw and by <= my <= by + _bh:
+                            if i == 0:   # only Uhyun box is active
+                                secret_q_idx   = 0
+                                secret_answers = []
+                                secret_q_sel   = -1
+                                state = C.SECRET_QUIZ
+                            break
+
+                elif state == C.SECRET_QUIZ:
+                    if secret_q_idx >= len(UHYUN_QS):
+                        # Results screen — click anywhere to dismiss
+                        secret_q_idx   = 0
+                        secret_answers = []
+                        secret_q_sel   = -1
+                        state = C.SECRET
+                    else:
+                        # Answer buttons: 2 × 2 grid centred on screen
+                        _bw, _bh = 260, 60
+                        _gap = 14
+                        _grid_w = _bw * 2 + _gap
+                        _gx = (C.SW - _grid_w) // 2
+                        _gy = C.SH // 2 + 20
+                        for i in range(4):
+                            abx = _gx + (i % 2) * (_bw + _gap)
+                            aby = _gy + (i // 2) * (_bh + _gap)
+                            if abx <= mx <= abx + _bw and aby <= my <= aby + _bh:
+                                q = UHYUN_QS[secret_q_idx]
+                                secret_answers.append(i == q["ans"])
+                                secret_q_sel = i
+                                secret_q_idx += 1
+                                break
+
                 elif state == C.PLAY:
                     for d in doors:
                         if d.r.collidepoint(mx, my):
@@ -544,7 +935,7 @@ def main():
                                 player.vx = player.vy = 0
                                 if d.num not in door_questions:
                                     door_questions[d.num] = get_door_question(
-                                        d.num, selected_grade)
+                                        d.num, selected_grade, stage, used_ids)
                                 active_door = d
                                 active_q    = door_questions[d.num]
                                 flash_msg   = ""
@@ -585,6 +976,54 @@ def main():
             if cutscene2.update():
                 full_reset(lvl + 1, score, player.lives)
 
+        elif state == C.STAGE_TRANSIT:
+            if stage_transition.update():
+                state = C.PLAY
+
+        elif state == C.CHAR_CUTSCENE:
+            if char_cutscene.update():
+                music.play(stage_track_idx)
+                state = C.TUTORIAL_PROMPT
+
+        elif state == C.BOSS_CUTSCENE:
+            if boss_cutscene.update():
+                boss_fight.reset(selected_char, lvl, boss_cutscene.get_boss_img())
+                state = C.BOSS_FIGHT
+
+        elif state == C.BOSS_FIGHT:
+            boss_fight.update()
+
+        elif state == C.SECRET:
+            # Player moves freely inside the secret room
+            if player.push_cd == 0:
+                kp = pygame.key.get_pressed()
+                dx, dy = 0, 0
+                if kp[pygame.K_LEFT]  or kp[pygame.K_a]: dx -= 1
+                if kp[pygame.K_RIGHT] or kp[pygame.K_d]: dx += 1
+                if kp[pygame.K_UP]    or kp[pygame.K_w]: dy -= 1
+                if kp[pygame.K_DOWN]  or kp[pygame.K_s]: dy += 1
+                if dx and dy:
+                    f = C.SPEED / math.sqrt(2)
+                    player.vx, player.vy = dx * f, dy * f
+                elif dx or dy:
+                    player.vx, player.vy = dx * C.SPEED, dy * C.SPEED
+                else:
+                    player.vx = player.vy = 0
+            player.update()
+            secret_stage.update()
+            # Portal collision → fade out then show select screen
+            if player.r.colliderect(secret_stage.portal_rect):
+                _fade_target = "portal_enter"
+                fade_alpha   = 0
+                state        = C.FADE_OUT
+            # Right edge → return to main stage
+            elif player.x >= C.SW - C.PR:
+                player.x  = float(secret_return_pos[0])
+                player.y  = float(secret_return_pos[1])
+                player.vx = player.vy = 0
+                _fade_target = None
+                state        = C.PLAY
+
         elif state == C.PLAY:
             # Player movement (suppressed during push-back)
             if player.push_cd == 0:
@@ -601,6 +1040,13 @@ def main():
                     player.vx, player.vy = dx * C.SPEED, dy * C.SPEED
                 else:
                     player.vx = player.vy = 0
+
+                # Left edge → fade out then enter secret stage
+                if player.x <= C.PR and dx < 0:
+                    secret_return_pos = (player.x, player.y)
+                    _fade_target = "secret_enter"
+                    fade_alpha   = 0
+                    state        = C.FADE_OUT
 
             player.update()
 
@@ -628,7 +1074,7 @@ def main():
                     else:
                         # Enter question flow for this door
                         if d.num not in door_questions:
-                            door_questions[d.num] = get_door_question(d.num, selected_grade)
+                            door_questions[d.num] = get_door_question(d.num, selected_grade, stage, used_ids)
                         active_door = d
                         active_q    = door_questions[d.num]
                         flash_msg   = ""
@@ -646,8 +1092,20 @@ def main():
         elif state == C.FADE_OUT:
             fade_alpha = min(255, fade_alpha + C.FADE_SPEED)
             if fade_alpha >= 255:
-                q_start_time = pygame.time.get_ticks()   # start timing the answer
-                state = C.DOOR_QUESTION   # level music keeps playing
+                if _fade_target == "secret_enter":
+                    # Black screen reached — place player in secret area, fade back in
+                    player.x  = float(C.SW - C.PR - 60)
+                    player.y  = float(C.SH // 2)
+                    player.vx = player.vy = 0
+                    secret_stage.reset()
+                    _fade_target = "secret_fadein"
+                    state        = C.FADE_IN
+                elif _fade_target == "portal_enter":
+                    _fade_target = None
+                    state        = C.SECRET_SELECT
+                else:
+                    q_start_time = pygame.time.get_ticks()
+                    state        = C.DOOR_QUESTION
 
         elif state == C.DOOR_CORRECT:
             # Auto-advance to FADE_IN after 3 seconds
@@ -657,14 +1115,19 @@ def main():
         elif state == C.FADE_IN:
             fade_alpha = max(0, fade_alpha - C.FADE_SPEED)
             if fade_alpha <= 0:
-                if all(d.completed for d in doors):
+                if _fade_target == "secret_fadein":
+                    _fade_target = None
+                    state        = C.SECRET
+                elif all(d.completed for d in doors):
+                    savegame.save(selected_grade, lvl, score, player.lives)
+                    save_timer = 120
                     if stage < 5:
-                        # More stages remain in this world — reset doors
                         _advance_stage()
+                        stage_transition.reset(stage)
+                        state = C.STAGE_TRANSIT
                     else:
-                        # All 5 stages done — world complete
-                        savegame.save(selected_grade, lvl, score, player.lives)
-                        state = C.LVLDONE
+                        boss_cutscene.reset(lvl)
+                        state = C.BOSS_CUTSCENE
                 else:
                     state = C.PLAY
 
@@ -684,33 +1147,73 @@ def main():
         if state == C.TITLE and _prev_state != C.TITLE:
             title_enter_ms = pygame.time.get_ticks()
 
+        # Tick save indicator countdown every frame regardless of state
+        if save_timer > 0:
+            save_timer -= 1
+
+        # ── Debug command processor ───────────────────────────────────────────
+        cmd = debug_menu.get_command()
+        if cmd:
+            if cmd.startswith("b") and cmd[1:].isdigit():
+                target_lvl = int(cmd[1:])
+                if 1 <= target_lvl <= C.TOTAL:
+                    boss_cutscene.reset(target_lvl)
+                    state = C.BOSS_CUTSCENE
+            elif cmd.startswith("w") and cmd[1:].isdigit():
+                target_lvl = int(cmd[1:])
+                if 1 <= target_lvl <= C.TOTAL:
+                    full_reset(target_lvl, score, player.lives)
+            elif cmd == "win" and state == C.BOSS_FIGHT:
+                boss_fight._boss_hp = 0
+                boss_fight._log.append("[DEBUG] Boss HP set to 0.")
+                boss_fight._phase  = "win"
+                boss_fight.done    = True
+                boss_fight.result  = "win"
+            elif cmd == "heal" and state == C.BOSS_FIGHT:
+                boss_fight._hero_hp = boss_fight._HERO_MAX_HP
+                boss_fight._log.append("[DEBUG] HP restored.")
+
         # ── Draw ─────────────────────────────────────────────────────────────
 
-        # Stage is always drawn (even under fades)
-        draw_bg(lvl)
+        # Decide whether the secret area or the normal stage is the backdrop
+        _secret_backdrop = (
+            state in (C.SECRET, C.SECRET_SELECT, C.SECRET_QUIZ) or
+            (state == C.FADE_IN  and _fade_target == "secret_fadein") or
+            (state == C.FADE_OUT and _fade_target == "portal_enter")
+        )
 
-        for k in key_items:
-            k.draw()
-        for d in doors:
-            d.draw()
-
-        player.draw()
-
-        # HUD only shown during active gameplay
-        if state in (C.PLAY, C.FADE_OUT, C.FADE_IN, C.DOOR_QUESTION):
-            draw_hud(lvl, player.lives, score, player.keys, doors_completed, total_stars, stage)
-
-        # Flash message (centred in play area, only during PLAY)
-        if flash_timer > 0 and state == C.PLAY:
-            fs = display.f_big.render(flash_msg, True, flash_col)
-            display.screen.blit(
-                fs, (C.SW // 2 - fs.get_width() // 2, C.SH // 2 - 20))
+        if _secret_backdrop:
+            secret_stage.draw_background()
+            secret_stage.draw_portal()
+            player.draw()
+            if state == C.SECRET:
+                hint = display.f_xs.render(
+                    "Touch the portal   |   ESC to return", True, (180, 170, 220))
+                display.screen.blit(
+                    hint, (C.SW // 2 - hint.get_width() // 2, C.SH - 34))
+        else:
+            # Normal game world
+            draw_bg(lvl)
+            for k in key_items:
+                k.draw()
+            for d in doors:
+                d.draw()
+            player.draw()
+            if state in (C.PLAY, C.FADE_OUT, C.FADE_IN, C.DOOR_QUESTION, C.STAGE_TRANSIT):
+                draw_hud(lvl, player.lives, score, player.keys, doors_completed, total_stars, stage, save_timer)
+            if flash_timer > 0 and state == C.PLAY:
+                fs = display.f_big.render(flash_msg, True, flash_col)
+                display.screen.blit(
+                    fs, (C.SW // 2 - fs.get_width() // 2, C.SH // 2 - 20))
 
         # ── Overlay states ────────────────────────────────────────────────────
         if state == C.FADE_OUT or state == C.FADE_IN:
             fade_surf = pygame.Surface((C.SW, C.SH), pygame.SRCALPHA)
             fade_surf.fill((0, 0, 0, fade_alpha))
             display.screen.blit(fade_surf, (0, 0))
+
+        elif state in (C.SECRET_SELECT, C.SECRET_QUIZ):
+            _draw_secret_overlay(state, secret_q_idx, secret_answers)
 
         elif state == C.DOOR_QUESTION and active_q is not None:
             draw_door_question(
@@ -739,6 +1242,18 @@ def main():
         elif state == C.TRANSIT:
             cutscene2.draw()
 
+        elif state == C.CHAR_CUTSCENE:
+            char_cutscene.draw()
+
+        elif state == C.BOSS_CUTSCENE:
+            boss_cutscene.draw()
+
+        elif state == C.BOSS_FIGHT:
+            boss_fight.draw()
+
+        elif state == C.STAGE_TRANSIT:
+            stage_transition.draw()
+
         elif state == C.SPLASH:
             draw_splash()
         elif state == C.TITLE:
@@ -749,9 +1264,13 @@ def main():
         elif state == C.TITLE_CREDITS:
             draw_title_credits()
         elif state == C.CHAR_SELECT:
-            draw_char_select(char_sel)
+            draw_char_select(char_sel, secret_char_popup, secret_char_sel)
         elif state == C.GRADE_SELECT:
             draw_grade_select()
+        elif state == C.TUTORIAL_PROMPT:
+            draw_tutorial_prompt(tutorial_sel)
+        elif state == C.TUTORIAL:
+            draw_tutorial(tutorial_page)
         elif state == C.INTRO:
             draw_intro(selected_grade)
         elif state == C.BONUS_Q:
@@ -765,6 +1284,7 @@ def main():
         elif state == C.GAMEWIN:
             draw_gamewin(score)
 
+        debug_menu.draw(display.screen)
         display.flip()
 
     pygame.quit()

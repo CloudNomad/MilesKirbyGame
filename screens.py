@@ -271,24 +271,36 @@ def draw_title_credits() -> None:
     pygame.draw.line(display.screen, C.GOLD,
                      (C.SW // 2 - 200, 140), (C.SW // 2 + 200, 140), 2)
 
-    cw, ch = 540, 200
+    cw, ch = 540, 340
     cx     = (C.SW - cw) // 2
-    cy     = 168
+    cy     = 158
     pygame.draw.rect(display.screen, (10, 22, 70), (cx, cy, cw, ch), border_radius=14)
     pygame.draw.rect(display.screen, C.GOLD,       (cx, cy, cw, ch), border_radius=14, width=2)
 
-    txt("Developer", display.f_sm,  C.LGRAY, C.SW // 2, cy + 50,  center=True)
-    txt("Mr. Joshua",  display.f_big,  C.GOLD,  C.SW // 2, cy + 84,  center=True, shadow=True)
+    txt("Developer", display.f_sm,  C.LGRAY, C.SW // 2, cy + 36,  center=True)
+    txt("Mr. Joshua",  display.f_big,  C.GOLD,  C.SW // 2, cy + 66,  center=True, shadow=True)
 
     pygame.draw.line(display.screen, C.DKGRAY,
-                     (cx + 40, cy + 126), (cx + cw - 40, cy + 126), 1)
+                     (cx + 40, cy + 104), (cx + cw - 40, cy + 104), 1)
 
-    txt("Made with Python & Pygame", display.f_xs, C.GRAY, C.SW // 2, cy + 146, center=True)
+    CONTRIBUTORS = [
+        ("Math Expert",       "Uhyun"),
+        ("Character Artist",  "Alice"),
+    ]
+    for i, (role, name) in enumerate(CONTRIBUTORS):
+        oy = cy + 124 + i * 72
+        txt(role, display.f_sm,  C.LGRAY, C.SW // 2, oy,      center=True)
+        txt(name, display.f_big, C.LPURPLE, C.SW // 2, oy + 30, center=True, shadow=True)
+
+    pygame.draw.line(display.screen, C.DKGRAY,
+                     (cx + 40, cy + 272), (cx + cw - 40, cy + 272), 1)
+
+    txt("Made with Python & Pygame", display.f_xs, C.GRAY, C.SW // 2, cy + 292, center=True)
 
     pulse = abs(math.sin(pygame.time.get_ticks() * 0.003))
     cv    = int(160 + pulse * 95)
-    txt("Press  ESC  to go back", display.f_sm, (cv, cv, cv),
-        C.SW // 2, cy + ch + 28, center=True)
+    txt("Press  any key  to go back", display.f_sm, (cv, cv, cv),
+        C.SW // 2, cy + ch + 22, center=True)
 
 
 def draw_grade_select(hover: int = 0):
@@ -356,10 +368,13 @@ def draw_grade_select(hover: int = 0):
         (cv, cv, 40), C.SW // 2, row_y[1] + ch + 28, center=True, shadow=True)
 
 
-def draw_char_select(sel: int) -> None:
+def draw_char_select(sel: int, secret_popup: bool = False,
+                     secret_sel: int = 0) -> None:
     """
     Character selection screen.
-    sel: 0 = Kirby,  1 = Miles Morales
+    sel: 0 = Kirby,  1 = Miles Morales,  2 = Secret Characters
+    secret_popup: show the secret character selection overlay
+    secret_sel: 0-5 slot index highlighted in the popup
     """
     if assets.main_menu_img:
         display.screen.blit(assets.main_menu_img, (0, 0))
@@ -391,11 +406,20 @@ def draw_char_select(sel: int) -> None:
                       "from a challenge."],
             "key":   "Press  2",
         },
+        {
+            "id":    "secret",
+            "name":  "SECRET CHARACTERS",
+            "col":   (200, 160, 255),
+            "lines": ["Hidden heroes shrouded in mystery.",
+                      "Unlock their stories and",
+                      "discover their power."],
+            "key":   "Press  3",
+        },
     ]
 
-    card_w, card_h = 360, 430
-    gap    = 60
-    total  = card_w * 2 + gap
+    card_w, card_h = 310, 430
+    gap    = 30
+    total  = card_w * 3 + gap * 2
     left_x = (C.SW - total) // 2
     card_y = 108
 
@@ -422,30 +446,36 @@ def draw_char_select(sel: int) -> None:
 
         # ── Character preview ────────────────────────────────────────────────
         prev_cx = mid
-        prev_cy = card_y + 160
+        prev_cy = card_y + 155
 
-        if i == 0:                        # Kirby
+        if i == 0:
             _preview_kirby(prev_cx, prev_cy, assets.player_img)
-        else:                             # Miles
+        elif i == 1:
             _preview_miles(prev_cx, prev_cy, assets.miles_img)
+        else:
+            _preview_secret_card(prev_cx, prev_cy, is_sel)
 
         # ── Name ────────────────────────────────────────────────────────────
-        txt(ch["name"], display.f_big, ch["col"],
-            mid, card_y + 300, center=True, shadow=True)
+        txt(ch["name"], display.f_sm, ch["col"],
+            mid, card_y + 292, center=True, shadow=True)
 
         # ── Description ─────────────────────────────────────────────────────
         for j, line in enumerate(ch["lines"]):
             col = C.WHITE if is_sel else C.GRAY
-            txt(line, display.f_sm, col, mid, card_y + 338 + j * 22, center=True)
+            txt(line, display.f_xs, col, mid, card_y + 326 + j * 20, center=True)
 
         # ── Key hint ─────────────────────────────────────────────────────────
         hint_col = C.GOLD if is_sel else (100, 100, 120)
-        txt(ch["key"], display.f_sm, hint_col,
-            mid, card_y + card_h - 26, center=True)
+        txt(ch["key"], display.f_xs, hint_col,
+            mid, card_y + card_h - 24, center=True)
 
     # Bottom instruction
-    txt("◄ ►  or  1 / 2  to choose        Enter to confirm",
+    txt("◄ ►  or  1 / 2 / 3  to choose        Enter to confirm",
         display.f_sm, (160, 160, 200), C.SW // 2, C.SH - 24, center=True)
+
+    # Secret character popup
+    if secret_popup:
+        _draw_secret_char_popup(secret_sel)
 
 
 # ── Character preview helpers ─────────────────────────────────────────────────
@@ -510,6 +540,98 @@ def _preview_miles(cx: int, cy: int, img) -> None:
     pygame.draw.ellipse(display.screen, WHITE, (cx + 4,  cy - 38, 14, 10))
     pygame.draw.line(display.screen, RED,
                      (cx - 16, cy - 41), (cx + 16, cy - 41), 3)
+
+
+def _preview_secret_card(cx: int, cy: int, is_sel: bool) -> None:
+    """Draw a '?' placeholder preview for the secret characters card."""
+    R = 46
+    pulse_col = (160, 80, 255) if is_sel else (80, 40, 130)
+    pygame.draw.circle(display.screen, (30, 10, 60),  (cx, cy), R)
+    pygame.draw.circle(display.screen, pulse_col, (cx, cy), R, 3)
+    font = pygame.font.SysFont("arial", R + 10, bold=True)
+    surf = font.render("?", True, (200, 160, 255) if is_sel else (120, 80, 180))
+    display.screen.blit(surf, surf.get_rect(center=(cx, cy)))
+
+
+def _draw_secret_char_popup(sel: int) -> None:
+    """
+    Centered 720×400 popup with 6 character slots (3 cols × 2 rows).
+    Slots 0-1 are playable; slots 2-5 are locked '???'.
+    sel: 0-5 currently highlighted slot.
+    """
+    pw, ph = 720, 420
+    px = (C.SW - pw) // 2
+    py = (C.SH - ph) // 2
+
+    # Dimmed backdrop
+    dim = pygame.Surface((C.SW, C.SH), pygame.SRCALPHA)
+    dim.fill((0, 0, 0, 160))
+    display.screen.blit(dim, (0, 0))
+
+    # Panel
+    pygame.draw.rect(display.screen, (18, 8, 45), (px, py, pw, ph), border_radius=20)
+    pygame.draw.rect(display.screen, (200, 160, 255), (px, py, pw, ph), border_radius=20, width=3)
+
+    txt("SECRET CHARACTERS", display.f_big, (200, 160, 255),
+        C.SW // 2, py + 28, center=True, shadow=True)
+    pygame.draw.line(display.screen, (100, 60, 160),
+                     (px + 30, py + 56), (px + pw - 30, py + 56), 1)
+
+    slot_w, slot_h = 190, 120
+    cols, rows = 3, 2
+    gap_x = (pw - slot_w * cols) // (cols + 1)
+    gap_y = 18
+    grid_top = py + 72
+
+    SECRET_CHARS = [
+        {"name": "???", "col": (200, 160, 255), "locked": False},
+        {"name": "???", "col": (200, 160, 255), "locked": False},
+        {"name": "???", "col": (80, 60, 100),   "locked": True},
+        {"name": "???", "col": (80, 60, 100),   "locked": True},
+        {"name": "???", "col": (80, 60, 100),   "locked": True},
+        {"name": "???", "col": (80, 60, 100),   "locked": True},
+    ]
+
+    for idx, sc in enumerate(SECRET_CHARS):
+        col_i = idx % cols
+        row_i = idx // cols
+        sx = px + gap_x + col_i * (slot_w + gap_x)
+        sy = grid_top + row_i * (slot_h + gap_y)
+        is_sel = (idx == sel)
+
+        bg_c  = (50, 20, 90)  if (is_sel and not sc["locked"]) else (22, 10, 40)
+        bdr_c = sc["col"]     if is_sel else (60, 40, 90)
+        bdr_w = 3             if is_sel else 1
+        pygame.draw.rect(display.screen, bg_c,  (sx, sy, slot_w, slot_h), border_radius=12)
+        pygame.draw.rect(display.screen, bdr_c, (sx, sy, slot_w, slot_h), border_radius=12, width=bdr_w)
+
+        mid_x = sx + slot_w // 2
+        mid_y = sy + slot_h // 2
+
+        if sc["locked"]:
+            # Lock icon (simple procedural)
+            lx, ly = mid_x, mid_y - 8
+            pygame.draw.rect(display.screen, (80, 60, 100),
+                             (lx - 12, ly,     24, 18), border_radius=4)
+            pygame.draw.arc(display.screen, (80, 60, 100),
+                            (lx - 10, ly - 16, 20, 20),
+                            0, 3.14159, 3)
+            txt("LOCKED", display.f_xs, (80, 60, 100), mid_x, sy + slot_h - 18, center=True)
+        else:
+            # Sprite or '?' placeholder
+            img = assets.secret1_img if idx == 0 else assets.secret2_img
+            if img:
+                scaled = pygame.transform.smoothscale(img, (60, 60))
+                display.screen.blit(scaled, scaled.get_rect(center=(mid_x, mid_y - 10)))
+            else:
+                font = pygame.font.SysFont("arial", 38, bold=True)
+                surf = font.render("?", True, (200, 160, 255))
+                display.screen.blit(surf, surf.get_rect(center=(mid_x, mid_y - 10)))
+            name_col = (200, 160, 255) if is_sel else (150, 110, 200)
+            txt(sc["name"], display.f_xs, name_col, mid_x, sy + slot_h - 18, center=True)
+
+    txt("ESC to close   ◄ ► ▲ ▼ navigate   Enter to select",
+        display.f_xs, (120, 100, 160), C.SW // 2, py + ph - 18, center=True)
 
 
 def draw_intro(selected_grade: int = 0):
@@ -614,6 +736,226 @@ def draw_lvl_done(lvl: int, score: int, level_stars: int = 0, total_stars: int =
             display.f_med, C.CYAN, C.SW // 2, 400, center=True)
     txt("Press ENTER or SPACE to continue", display.f_sm, C.YELLOW,
         C.SW // 2, 450, center=True)
+
+
+# ─── Tutorial ─────────────────────────────────────────────────────────────────
+
+_TUTORIAL_TITLES = ["Welcome!", "Portals", "Items", "Need Help?"]
+
+_TUTORIAL_TEXT = [
+    "Hi my name is Gizmo, and I am here to help you on your quest to find all "
+    "the ancient scrolls! The scrolls are scattered across 6 worlds! To get a "
+    "scroll, you have to answer a question! If you answer a question quickly, "
+    "you will receive stars! The faster you answer a question, the more stars "
+    "you get! Earning many stars will give you special rewards like potions, "
+    "armor, and other secrets! These will be useful for your journey!",
+
+    "There are 3 portals in every stage. There are 5 stages in each world. "
+    "Each portal will ask a different question. There are G, V, and S portals. "
+    "These portals will test your knowledge! Also, be aware, as you continue, "
+    "new portals may open!",
+
+    "Health potions provide health points during boss battles. Magic potions "
+    "deal damage to foes. Armor protects against attacks. Keys provide access "
+    "to special portals.",
+
+    "If you have questions, ask me or Mr. Joshua, and we can provide hints!",
+]
+
+_TUTORIAL_TITLE_COLORS = [
+    (0, 150, 220),    # page 0 – blue
+    (20, 160, 90),    # page 1 – green
+    (160, 80, 220),   # page 2 – purple
+    (210, 140, 0),    # page 3 – amber
+]
+
+
+def _draw_gizmo(cx: int, cy: int, scale: float = 1.0) -> None:
+    """Draw the Gizmo tutorial guide robot centred at (cx, cy)."""
+    scr   = display.screen
+    bob   = int(math.sin(pygame.time.get_ticks() * 0.004) * 4)
+    cy   += bob
+    s     = scale
+    R     = int(26 * s)
+    TEAL  = (0,   200, 185)
+    LTEAL = (90,  230, 215)
+    DTEAL = (0,   140, 125)
+    GOLD  = (255, 210,  40)
+    EYE_W = (240, 245, 255)
+    EYE_P = (25,   15,  55)
+
+    # Antenna
+    pygame.draw.line(scr, DTEAL, (cx, cy - R), (cx, cy - R - int(22*s)), 3)
+    pygame.draw.circle(scr, GOLD,         (cx, cy - R - int(22*s)), int(6*s))
+    pygame.draw.circle(scr, (255, 255, 160), (cx, cy - R - int(22*s)), int(3*s))
+
+    # Head
+    pygame.draw.circle(scr, TEAL,  (cx, cy), R)
+    pygame.draw.circle(scr, LTEAL, (cx - R // 3, cy - R // 3), R // 3)
+    pygame.draw.circle(scr, DTEAL, (cx, cy), R, 2)
+
+    # Eyes
+    ew, eh = int(11 * s), int(13 * s)
+    for ex in (cx - int(9 * s), cx + int(1 * s)):
+        pygame.draw.ellipse(scr, EYE_W, (ex, cy - int(14 * s), ew, eh))
+        pygame.draw.circle(scr, EYE_P,  (ex + ew // 2, cy - int(8 * s)), int(4 * s))
+        pygame.draw.circle(scr, EYE_W,  (ex + ew // 2 - 2, cy - int(10 * s)), 1)
+
+    # Smile
+    pygame.draw.arc(scr, EYE_W,
+                    (cx - int(9 * s), cy + int(2 * s), int(18 * s), int(9 * s)),
+                    math.pi, 0, 2)
+
+    # Body
+    bx, by = cx - int(20 * s), cy + R + 2
+    bw, bh = int(40 * s), int(32 * s)
+    pygame.draw.rect(scr, TEAL,  (bx, by, bw, bh), border_radius=int(6 * s))
+    pygame.draw.rect(scr, DTEAL, (bx, by, bw, bh), border_radius=int(6 * s), width=2)
+    pygame.draw.circle(scr, (50,  255, 100), (cx, by + bh // 2), int(5 * s))
+    pygame.draw.circle(scr, (180, 255, 200), (cx, by + bh // 2), int(3 * s))
+
+    # Arms
+    ax_l, ax_r = bx - int(13 * s), bx + bw
+    arm_y, aw, ah = by + int(6 * s), int(13 * s), int(19 * s)
+    for ax in (ax_l, ax_r):
+        pygame.draw.ellipse(scr, TEAL,  (ax, arm_y, aw, ah))
+        pygame.draw.ellipse(scr, DTEAL, (ax, arm_y, aw, ah), 1)
+
+    # Legs + feet
+    for lx in (cx - int(14 * s), cx + int(4 * s)):
+        pygame.draw.rect(scr, DTEAL, (lx, by + bh, int(10 * s), int(12 * s)), border_radius=3)
+    for fx in (cx - int(18 * s), cx + int(2 * s)):
+        pygame.draw.ellipse(scr, TEAL, (fx, by + bh + int(8 * s), int(16 * s), int(8 * s)))
+
+
+def _draw_portal_badge(label: str, color: tuple, cx: int, cy: int) -> None:
+    """Draw a colored portal indicator badge centred at (cx, cy)."""
+    surf = display.f_sm.render(label, True, C.WHITE)
+    bw   = surf.get_width() + 20
+    bh   = surf.get_height() + 10
+    lx   = max(4, min(C.SW - bw - 4, cx - bw // 2))
+    ly   = max(4, min(C.SH - bh - 4, cy - bh // 2))
+    bg   = pygame.Surface((bw, bh), pygame.SRCALPHA)
+    bg.fill((color[0] // 2, color[1] // 2, color[2] // 2, 220))
+    display.screen.blit(bg, (lx, ly))
+    pygame.draw.rect(display.screen, color, (lx, ly, bw, bh), border_radius=6, width=2)
+    display.screen.blit(surf, (lx + 10, ly + 5))
+
+
+def _draw_portal_indicators() -> None:
+    """Page-1 only: draw arrows near each door to identify Grammar/Vocab/Science."""
+    # Grammar door: top-center (D1X=505, D1Y=0)
+    _draw_portal_badge("↑  Grammar  (G)",  (30,  80, 200),
+                        C.D1X + C.DW // 2, 152)
+    # Vocab door: bottom-center (D2X=505, D2Y=520)
+    _draw_portal_badge("↓  Vocab    (V)",  (20, 160,  80),
+                        C.D2X + C.DW // 2, C.D2Y - 40)
+    # Science door: right-center (D3X=1010, D3Y=260)
+    _draw_portal_badge("Science  (S)  →",  (130, 50, 200),
+                        C.D3X - 85, C.D3Y + C.DH // 2)
+
+
+def draw_tutorial_prompt(sel: int = 0) -> None:
+    """
+    Y / N dialog asking if the player wants a tutorial.
+    sel=0 → Yes highlighted; sel=1 → No highlighted.
+    """
+    _overlay(0, 10, 30, 180)
+
+    dw, dh = 700, 340
+    dx, dy = (C.SW - dw) // 2, (C.SH - dh) // 2 - 20
+
+    panel = pygame.Surface((dw, dh), pygame.SRCALPHA)
+    panel.fill((8, 25, 70, 240))
+    display.screen.blit(panel, (dx, dy))
+    pygame.draw.rect(display.screen, C.GOLD, (dx, dy, dw, dh), border_radius=18, width=3)
+
+    _draw_gizmo(dx + 118, dy + 178, scale=1.2)
+
+    txt("Would you like a tutorial?",
+        display.f_big, C.WHITE, dx + 400, dy + 75, center=True, shadow=True)
+    txt("Gizmo will guide you through", display.f_sm, C.CYAN,  dx + 400, dy + 128, center=True)
+    txt("the basics of the game!",      display.f_sm, C.CYAN,  dx + 400, dy + 155, center=True)
+
+    for i, (label, col_on, col_off) in enumerate([
+        ("YES  (Y)", (35, 175, 75),  (15, 70, 35)),
+        ("NO   (N)", (175, 55, 55),  (75, 25, 25)),
+    ]):
+        bw, bh = 190, 52
+        bx = dx + 280 + i * (bw + 18)
+        by = dy + 248
+        col = col_on if sel == i else col_off
+        btn = pygame.Surface((bw, bh), pygame.SRCALPHA)
+        btn.fill((*col, 240))
+        display.screen.blit(btn, (bx, by))
+        border_col = C.GOLD if sel == i else C.GRAY
+        pygame.draw.rect(display.screen, border_col, (bx, by, bw, bh), border_radius=10, width=3)
+        txt(label, display.f_med, C.WHITE, bx + bw // 2, by + bh // 2, center=True, shadow=True)
+
+    txt("← →  or  Y / N  to choose     ENTER to confirm",
+        display.f_xs, C.LGRAY, C.SW // 2, dy + dh - 18, center=True)
+
+
+def draw_tutorial(page: int) -> None:
+    """
+    Draw one of 4 tutorial pages (page 0–3).
+    The stage is visible in the background through the semi-transparent overlay.
+    """
+    NPAGES = 4
+    _overlay(0, 5, 20, 155)
+
+    # Page 1: draw portal direction badges near each door
+    if page == 1:
+        _draw_portal_indicators()
+
+    # Main panel
+    px, py = 140, 285
+    pw, ph = 820, 272
+    panel = pygame.Surface((pw, ph), pygame.SRCALPHA)
+    panel.fill((6, 18, 54, 230))
+    display.screen.blit(panel, (px, py))
+    pygame.draw.rect(display.screen, C.GOLD, (px, py, pw, ph), border_radius=14, width=3)
+
+    # Coloured title bar
+    tc = _TUTORIAL_TITLE_COLORS[page]
+    pygame.draw.rect(display.screen, tc, (px, py, pw, 40), border_radius=14)
+    pygame.draw.rect(display.screen, tc, (px, py + 20, pw, 20))
+    txt(_TUTORIAL_TITLES[page], display.f_med, C.WHITE,
+        px + pw // 2, py + 20, center=True, shadow=True)
+
+    # Gizmo — left of panel
+    _draw_gizmo(75, 498, scale=1.1)
+
+    # Speech-bubble triangle connector from Gizmo toward panel
+    tri = [(140, 468), (120, 498), (140, 518)]
+    pygame.draw.polygon(display.screen, (6, 18, 54), tri)
+    pygame.draw.polygon(display.screen, C.GOLD, tri, 2)
+
+    # Wrapped text content
+    cx0 = px + 20
+    cy0 = py + 52
+    cw  = pw - 32
+    lines = wrap_text(_TUTORIAL_TEXT[page], display.f_sm, cw)
+    lh    = display.f_sm.get_linesize() + 3
+    for i, line in enumerate(lines[:7]):
+        txt(line, display.f_sm, C.WHITE, cx0, cy0 + i * lh)
+
+    # Page dots
+    dot_y  = py + ph + 16
+    dot_cx = C.SW // 2
+    for i in range(NPAGES):
+        filled = (i == page)
+        col    = C.GOLD if filled else (50, 50, 80)
+        r      = 8 if filled else 5
+        pygame.draw.circle(display.screen, col,
+                           (dot_cx + (i - NPAGES // 2) * 24, dot_y), r)
+
+    # Continue / finish hint
+    pulse = abs(math.sin(pygame.time.get_ticks() * 0.003))
+    cv    = int(180 + pulse * 75)
+    hint  = "ENTER or SPACE  –  start playing!" if page == NPAGES - 1 else "ENTER or SPACE  –  continue"
+    txt(hint, display.f_sm, (cv, cv, 60), C.SW // 2, dot_y + 26, center=True)
+    txt("ESC – skip tutorial", display.f_xs, C.GRAY, C.SW // 2, dot_y + 50, center=True)
 
 
 def draw_gameover(score: int):

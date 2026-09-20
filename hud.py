@@ -8,12 +8,10 @@ Layout
       left   – Level / Lives / Score / Keys held
       right  – music track name + mute indicator + volume bar
 
-  Door status strip (below the bar):
-      Shows Door 1 / 2 / 3 with subject name and DONE badge when completed.
-
-  Hint line (shown until all doors are completed):
-      Subtle one-liner below the top bar.
+  Save indicator (top-right corner, temporary):
+      Spinning gold arc + "Saved" label shown for ~2 s after an autosave.
 """
+import math
 import pygame
 import display
 import constants as C
@@ -49,7 +47,7 @@ def _draw_star(x: int, y: int, size: int, filled: bool) -> None:
 
 def draw_hud(lvl: int, lives: int, score: int,
              keys_held: list, doors_completed: set, total_stars: int = 0,
-             stage: int = 1):
+             stage: int = 1, save_timer: int = 0):
     """
     lvl             – current world number (1-6)
     lives           – remaining lives
@@ -82,6 +80,53 @@ def draw_hud(lvl: int, lives: int, score: int,
     # Right side: music section
     _draw_music_section()
 
+    # Save indicator (drawn last so it sits on top)
+    if save_timer > 0:
+        _draw_save_indicator(save_timer)
+
+
+# ── Save indicator ─────────────────────────────────────────────────────────────
+_SAVE_TOTAL = 120   # frames the indicator stays visible (= 2 s at 60 fps)
+
+def _draw_save_indicator(timer: int) -> None:
+    """Spinning gold arc + 'Saved' label in the top-right corner of the HUD bar."""
+    cx = C.SW - 20          # spinner centre x (inside HUD, clear of right edge)
+    cy = C.HUD_H // 2       # vertically centred in the HUD bar
+    R  = 9                  # outer radius of the arc track
+
+    # Fade out in the last 24 frames
+    alpha = 255 if timer > 24 else int(255 * timer / 24)
+
+    # ── Spinner surface (SRCALPHA so we can fade) ──────────────────────────────
+    sz   = (R + 3) * 2
+    surf = pygame.Surface((sz, sz), pygame.SRCALPHA)
+    sc   = R + 3          # centre within the surface
+    rect = pygame.Rect(3, 3, R * 2, R * 2)
+
+    # Dim track circle
+    pygame.draw.circle(surf, (60, 60, 90, alpha), (sc, sc), R, 2)
+
+    # Spinning arc – 270° gap (leaves a 90° gap so it looks like a spinner)
+    speed  = 4.5            # radians per second
+    t_sec  = pygame.time.get_ticks() / 1000.0
+    start  = (t_sec * speed) % (2 * math.pi)
+    span   = math.pi * 1.5  # 270°
+    end    = start + span
+
+    gold = (255, 215, 0, alpha)
+    # Draw arc; handle 2π wrap with two segments if needed
+    if end <= 2 * math.pi:
+        pygame.draw.arc(surf, gold, rect, start, end, 3)
+    else:
+        pygame.draw.arc(surf, gold, rect, start, 2 * math.pi, 3)
+        pygame.draw.arc(surf, gold, rect, 0.0, end - 2 * math.pi, 3)
+
+    display.screen.blit(surf, (cx - sc, cy - sc))
+
+    # "Saved" label to the left of the spinner
+    lbl  = display.f_xs.render("Saved", True, C.GOLD)
+    lbl.set_alpha(alpha)
+    display.screen.blit(lbl, (cx - sc - lbl.get_width() - 3, cy - lbl.get_height() // 2))
 
 
 # ── Music section (top-right of HUD bar) ──────────────────────────────────────

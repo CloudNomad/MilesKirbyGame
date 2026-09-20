@@ -60,6 +60,18 @@ class Player:
                 display.screen.blit(assets.miles_img, rect)
             else:
                 self._draw_miles(x, y)
+        elif self.character == "secret1":
+            if assets.secret1_img:
+                rect = assets.secret1_img.get_rect(center=(x, y))
+                display.screen.blit(assets.secret1_img, rect)
+            else:
+                self._draw_question_mark(x, y)
+        elif self.character == "secret2":
+            if assets.secret2_img:
+                rect = assets.secret2_img.get_rect(center=(x, y))
+                display.screen.blit(assets.secret2_img, rect)
+            else:
+                self._draw_question_mark(x, y)
         else:
             if assets.player_img:
                 rect = assets.player_img.get_rect(center=(x, y))
@@ -112,6 +124,15 @@ class Player:
                             (x - R - 8, y + bob - 5 + aw, 14, 12))
         pygame.draw.ellipse(display.screen, C.HOTPNK,
                             (x + R - 6, y + bob - 5 - aw, 14, 12))
+
+    def _draw_question_mark(self, x: int, y: int):
+        """Procedural fallback for unknown/secret characters."""
+        R = C.PR
+        pygame.draw.circle(display.screen, (60, 20, 100), (x, y), R)
+        pygame.draw.circle(display.screen, (200, 160, 255), (x, y), R, 2)
+        font = pygame.font.SysFont("arial", R + 6, bold=True)
+        surf = font.render("?", True, (255, 255, 255))
+        display.screen.blit(surf, surf.get_rect(center=(x, y)))
 
     def _draw_miles(self, x: int, y: int):
         """Procedural Miles Morales (Spider-Man) sprite."""

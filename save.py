@@ -11,8 +11,11 @@ Saved data
 
 import json
 import os
+import sys
 
-_SAVE_FILE = os.path.join(os.path.dirname(__file__), "save.json")
+_BASE      = (os.path.dirname(sys.executable) if getattr(sys, "frozen", False)
+              else os.path.dirname(os.path.abspath(__file__)))
+_SAVE_FILE = os.path.join(_BASE, "save.json")
 
 
 def exists() -> bool:

@@ -33,6 +33,7 @@ Usage
 """
 
 import os
+import sys
 import pygame
 
 # ── Internal state ─────────────────────────────────────────────────────────────
@@ -41,17 +42,24 @@ _index:  int       = 0      # currently loaded track index
 _muted:  bool      = False
 _volume: float     = 0.7    # 0.0 – 1.0
 
-_question_track:    str | None  = None   # path to question.mp3    (None if not found)
-_cutscene_track:    str | None  = None   # path to cutscene.mp3    (None if not found)
-_main_menu_track:   str | None  = None   # path to MainMenu.mp3    (None if not found)
-_main_menu_active:  bool        = False  # True while MainMenu.mp3 is the loaded track
-_transition_tracks: dict        = {}     # to_world (2-6) → path or None
+_question_track:       str | None  = None   # path to question.mp3
+_cutscene_track:       str | None  = None   # path to cutscene.mp3
+_main_menu_track:      str | None  = None   # path to MainMenu.mp3
+_kirby_cutscene_track: str | None  = None   # path to cutscene_kirby.mp3
+_miles_cutscene_track: str | None  = None   # path to cutscene_miles.mp3
+_main_menu_active:     bool        = False  # True while MainMenu.mp3 is the loaded track
+_transition_tracks:    dict        = {}     # to_world (2-6) → path or None
 
-_MUSIC_DIR        = os.path.join(os.path.dirname(__file__), "assets", "music")
+_MUSIC_DIR        = os.path.join(
+    getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))),
+    "assets", "music"
+)
 _SUPPORTED        = {".mp3"}
-_QUESTION_FILE    = "question.mp3"    # reserved — door question screen
-_CUTSCENE_FILE    = "cutscene.mp3"    # reserved — opening cutscene
-_MAIN_MENU_FILE   = "MainMenu.mp3"    # reserved — title screen
+_QUESTION_FILE        = "question.mp3"         # reserved — door question screen
+_CUTSCENE_FILE        = "cutscene.mp3"         # reserved — opening cutscene
+_MAIN_MENU_FILE       = "MainMenu.mp3"         # reserved — title screen
+_KIRBY_CUTSCENE_FILE  = "cutscene_kirby.mp3"  # reserved — Kirby character intro
+_MILES_CUTSCENE_FILE  = "cutscene_miles.mp3"  # reserved — Miles character intro
 # World transition tracks: cutscene2.mp3 … cutscene6.mp3
 _TRANSITION_FILES = {w: f"cutscene{w}.mp3" for w in range(2, 7)}
 
@@ -71,7 +79,7 @@ def init() -> None:
     from the normal stage playlist.
     """
     global _tracks, _index, _question_track, _cutscene_track, _main_menu_track
-    global _transition_tracks
+    global _kirby_cutscene_track, _miles_cutscene_track, _transition_tracks
 
     try:
         pygame.mixer.init()
@@ -98,34 +106,50 @@ def init() -> None:
         _transition_tracks[w] = path if os.path.isfile(path) else None
         _transition_fnames.add(fname)
         if _transition_tracks[w]:
-            print(f"[music] Transition track (→ world {w}): {fname}")
+            print(f"[music] Transition track (-> world {w}): {fname}")
         else:
             print(f"[music] No transition track for world {w} (add assets/music/{fname})")
 
     # Separate remaining reserved tracks from the stage playlist
-    _RESERVED = {_QUESTION_FILE, _CUTSCENE_FILE, _MAIN_MENU_FILE} | _transition_fnames
+    _RESERVED = (
+        {_QUESTION_FILE, _CUTSCENE_FILE, _MAIN_MENU_FILE,
+         _KIRBY_CUTSCENE_FILE, _MILES_CUTSCENE_FILE}
+        | _transition_fnames
+    )
     q_path  = os.path.join(_MUSIC_DIR, _QUESTION_FILE)
     c_path  = os.path.join(_MUSIC_DIR, _CUTSCENE_FILE)
     mm_path = os.path.join(_MUSIC_DIR, _MAIN_MENU_FILE)
-    _question_track  = q_path  if os.path.isfile(q_path)  else None
-    _cutscene_track  = c_path  if os.path.isfile(c_path)  else None
-    _main_menu_track = mm_path if os.path.isfile(mm_path) else None
+    kc_path = os.path.join(_MUSIC_DIR, _KIRBY_CUTSCENE_FILE)
+    mc_path = os.path.join(_MUSIC_DIR, _MILES_CUTSCENE_FILE)
+    _question_track       = q_path  if os.path.isfile(q_path)  else None
+    _cutscene_track       = c_path  if os.path.isfile(c_path)  else None
+    _main_menu_track      = mm_path if os.path.isfile(mm_path) else None
+    _kirby_cutscene_track = kc_path if os.path.isfile(kc_path) else None
+    _miles_cutscene_track = mc_path if os.path.isfile(mc_path) else None
     _tracks = [t for t in all_files
                if os.path.basename(t) not in _RESERVED]
     _index  = 0
 
     if _question_track:
-        print(f"[music] Question track:   {_QUESTION_FILE}")
+        print(f"[music] Question track:      {_QUESTION_FILE}")
     else:
-        print(f"[music] No question track found (add assets/music/{_QUESTION_FILE} for a dedicated track)")
+        print(f"[music] No question track found (add assets/music/{_QUESTION_FILE})")
     if _cutscene_track:
-        print(f"[music] Cutscene track:   {_CUTSCENE_FILE}")
+        print(f"[music] Cutscene track:      {_CUTSCENE_FILE}")
     else:
-        print(f"[music] No cutscene track found (add assets/music/{_CUTSCENE_FILE} for a dedicated track)")
+        print(f"[music] No cutscene track found (add assets/music/{_CUTSCENE_FILE})")
     if _main_menu_track:
-        print(f"[music] Main menu track:  {_MAIN_MENU_FILE}")
+        print(f"[music] Main menu track:     {_MAIN_MENU_FILE}")
     else:
-        print(f"[music] No main menu track found (add assets/music/{_MAIN_MENU_FILE} for a dedicated track)")
+        print(f"[music] No main menu track found (add assets/music/{_MAIN_MENU_FILE})")
+    if _kirby_cutscene_track:
+        print(f"[music] Kirby intro track:   {_KIRBY_CUTSCENE_FILE}")
+    else:
+        print(f"[music] No Kirby intro track (add assets/music/{_KIRBY_CUTSCENE_FILE})")
+    if _miles_cutscene_track:
+        print(f"[music] Miles intro track:   {_MILES_CUTSCENE_FILE}")
+    else:
+        print(f"[music] No Miles intro track (add assets/music/{_MILES_CUTSCENE_FILE})")
 
     if _tracks:
         print(f"[music] Found {len(_tracks)} stage track(s):")
@@ -226,6 +250,25 @@ def play_cutscene_track() -> None:
             play(0)
     else:
         play(0)
+
+
+def play_char_cutscene_track(char: str) -> None:
+    """
+    Play the character-specific intro track (cutscene_kirby.mp3 or
+    cutscene_miles.mp3).  Falls back to the shared cutscene track, then play(0).
+    """
+    track = _kirby_cutscene_track if char == "kirby" else _miles_cutscene_track
+    fallback = _cutscene_track
+    chosen = track or fallback
+    if chosen:
+        try:
+            pygame.mixer.music.load(chosen)
+            pygame.mixer.music.set_volume(0.0 if _muted else _volume)
+            pygame.mixer.music.play(-1)
+            return
+        except pygame.error as e:
+            print(f"[music] Could not play char cutscene track: {e}")
+    play(0)
 
 
 def play_transition_track(to_world: int) -> None:
